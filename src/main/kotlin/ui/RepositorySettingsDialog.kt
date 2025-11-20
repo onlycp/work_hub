@@ -27,8 +27,7 @@ import theme.*
  */
 @Composable
 fun RepositorySettingsDialog(
-    onDismiss: () -> Unit,
-    onSaved: (() -> Unit)? = null
+    onDismiss: () -> Unit
 ) {
     var settings by remember { mutableStateOf(RepositorySettingsManager.getCurrentSettings()) }
     var isTestingConnection by remember { mutableStateOf(false) }
@@ -265,8 +264,6 @@ fun RepositorySettingsDialog(
                                         }
                                     }
 
-                                    // 先调用onSaved回调，再关闭对话框
-                                    onSaved?.invoke()
                                     onDismiss()
                                 } finally {
                                     isSaving = false

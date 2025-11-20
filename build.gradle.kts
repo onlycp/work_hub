@@ -45,9 +45,6 @@ dependencies {
 compose.desktop {
     application {
         mainClass = "MainKt"
-        
-        // 添加 JVM 参数以修复 Windows 上的 JMX 错误
-        jvmArgs("-Dcom.sun.management.jmxremote=false")
 
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
@@ -60,8 +57,9 @@ compose.desktop {
                 iconFile.set(project.file("src/main/resources/icons/icon.icns"))
             }
             windows {
-                // Windows 使用 .ico 格式，确保使用正确的图标文件
-                iconFile.set(project.file("src/main/resources/icons/icon.ico"))
+                // Windows 使用 .png 格式（Compose Desktop 支持，参考 HomeApp 配置）
+                // 使用主图标文件，确保图标能正确显示
+                iconFile.set(project.file("src/main/resources/icon.png"))
                 // 配置开始菜单快捷方式
                 menu = true
                 menuGroup = "WorkHub"

@@ -36,8 +36,7 @@ import theme.*
 @Composable
 fun UserLoginDialog(
     onLoginSuccess: () -> Unit,
-    onDismiss: () -> Unit,
-    onRepositoryConfigured: (() -> Unit)? = null
+    onDismiss: () -> Unit
 ) {
     var userName by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -578,8 +577,7 @@ fun UserLoginDialog(
         // 仓库设置对话框（显示在最顶层）
         if (showRepoSettings) {
             RepositorySettingsDialog(
-                onDismiss = { showRepoSettings = false },
-                onSaved = onRepositoryConfigured
+                onDismiss = { showRepoSettings = false }
             )
         }
     }
