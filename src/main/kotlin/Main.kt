@@ -19,10 +19,8 @@ fun main() {
         System.setProperty("java.awt.headless", "false")
         // 禁用 JMX 服务器
         System.setProperty("com.sun.management.jmxremote", "false")
-        // 禁用 JGit 的 JMX 监控（WindowCache 的 MXBean）
+        // 禁用 JGit 的 JMX 监控（WindowCache 的 MXBean）- 这是最关键的设置
         System.setProperty("org.eclipse.jgit.internal.storage.file.WindowCache.mxBeanDisabled", "true")
-        // 禁用所有 JMX MBean 服务器
-        System.setProperty("javax.management.builder.initial", "java.lang.management.ManagementFactory")
     } catch (e: Exception) {
         // 忽略设置系统属性时的异常，不影响应用启动
         println("⚠️ 设置系统属性时出现异常: ${e.message}")

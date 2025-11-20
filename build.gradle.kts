@@ -62,8 +62,7 @@ compose.desktop {
         jvmArgs(
             "-Djava.awt.headless=false",
             "-Dcom.sun.management.jmxremote=false",
-            "-Dorg.eclipse.jgit.internal.storage.file.WindowCache.mxBeanDisabled=true",
-            "-Djavax.management.builder.initial=java.lang.management.ManagementFactory"
+            "-Dorg.eclipse.jgit.internal.storage.file.WindowCache.mxBeanDisabled=true"
         )
 
         nativeDistributions {

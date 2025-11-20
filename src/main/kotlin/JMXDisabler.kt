@@ -11,8 +11,8 @@ object JMXDisabler {
             // 禁用 JMX 相关功能
             System.setProperty("java.awt.headless", "false")
             System.setProperty("com.sun.management.jmxremote", "false")
+            // 禁用 JGit 的 JMX 监控（这是最关键的设置）
             System.setProperty("org.eclipse.jgit.internal.storage.file.WindowCache.mxBeanDisabled", "true")
-            System.setProperty("javax.management.builder.initial", "java.lang.management.ManagementFactory")
             
             // 尝试禁用 MBean 服务器（如果已创建）
             try {
