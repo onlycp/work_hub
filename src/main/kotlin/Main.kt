@@ -307,19 +307,19 @@ fun main() {
  * 执行退出清理并退出应用
  */
 fun performExitCleanup() {
-    Logger.log("📤 开始执行退出清理...")
+    println("📤 开始执行退出清理...")
 
     // 同步Git数据
     runBlocking {
         try {
             val syncResult = AppInitializer.syncData()
             if (syncResult.isSuccess) {
-                Logger.log("✓ 数据同步完成")
+                println("✓ 数据同步完成")
             } else {
-                Logger.log("⚠️ 数据同步失败: ${syncResult.exceptionOrNull()?.message}")
+                println("⚠️ 数据同步失败: ${syncResult.exceptionOrNull()?.message}")
             }
         } catch (e: Exception) {
-            Logger.error("数据同步异常", e)
+            println("⚠️ 数据同步异常: ${e.message}")
         }
     }
 
@@ -329,7 +329,6 @@ fun performExitCleanup() {
     // 这里可以添加其他清理逻辑，比如断开SSH连接等
     // TODO: 如果需要清理SSH连接或其他资源，在这里添加
 
-    Logger.log("✓ 清理完成，正在退出进程...")
-    Logger.close()
+    println("✓ 清理完成，正在退出进程...")
     kotlin.system.exitProcess(0)
 }

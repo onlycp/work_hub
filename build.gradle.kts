@@ -58,12 +58,11 @@ compose.desktop {
     application {
         mainClass = "MainKt"
         
-        // 设置 JVM 参数，禁用 JMX 以避免 Windows 上的 MalformedObjectNameException
-        jvmArgs(
-            "-Djava.awt.headless=false",
-            "-Dcom.sun.management.jmxremote=false",
-            "-Dorg.eclipse.jgit.internal.storage.file.WindowCache.mxBeanDisabled=true"
-        )
+        // 暂时移除 JVM 参数，如果参数导致问题可以重新添加
+        // jvmArgs(
+        //     "-Djava.awt.headless=false",
+        //     "-Dorg.eclipse.jgit.internal.storage.file.WindowCache.mxBeanDisabled=true"
+        // )
 
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
