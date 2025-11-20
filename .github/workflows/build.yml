@@ -1,12 +1,9 @@
-name: Build Multi-Platform Installers
+name: Build Windows MSI Installer
 
 on:
   push:
-    branches: [ main, master ]
     tags:
       - 'v*'
-  pull_request:
-    branches: [ main, master ]
   workflow_dispatch:  # 允许手动触发
 
 permissions:
@@ -16,16 +13,8 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [windows-latest]
         include:
-          - os: ubuntu-latest
-            target: Deb
-            artifact_name: "*.deb"
-            artifact_path: "build/compose/binaries/main/deb/"
-          - os: macos-latest
-            target: Dmg
-            artifact_name: "*.dmg"
-            artifact_path: "build/compose/binaries/main/dmg/"
           - os: windows-latest
             target: Msi
             artifact_name: "*.msi"
@@ -43,11 +32,7 @@ jobs:
       with:
         java-version: '17'
         distribution: 'temurin'
-    
-    - name: Grant execute permission for gradlew
-      if: runner.os != 'Windows'
-      run: chmod +x gradlew
-    
+
     - name: Configure Gradle for CI
       shell: bash
       run: |
@@ -58,8 +43,7 @@ jobs:
         echo "org.gradle.configureondemand=false" >> ~/.gradle/gradle.properties
         cat ~/.gradle/gradle.properties
     
-    - name: Verify WiX Toolset (Windows)
-      if: runner.os == 'Windows'
+    - name: Verify WiX Toolset
       shell: pwsh
       run: |
         $wixPath = "C:\Program Files (x86)\WiX Toolset v3.11\bin"
@@ -71,16 +55,8 @@ jobs:
         }
     
     - name: Package ${{ matrix.target }}
-      run: ./gradlew package${{ matrix.target }} --no-daemon --info --stacktrace
-      if: runner.os != 'Windows'
-      timeout-minutes: 25
-      env:
-        GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.parallel=false -Dfile.encoding=UTF-8"
-    
-    - name: Package ${{ matrix.target }} (Windows)
       shell: cmd
       run: gradlew.bat package${{ matrix.target }} --no-daemon --console=plain --info
-      if: runner.os == 'Windows'
       timeout-minutes: 25
       env:
         GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.parallel=false -Dfile.encoding=UTF-8"
