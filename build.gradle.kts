@@ -48,7 +48,6 @@ compose.desktop {
         
         // 添加 JVM 参数以修复 Windows 上的 JMX 错误
         jvmArgs("-Dcom.sun.management.jmxremote=false")
-        jvmArgs("-Djava.awt.headless=false")
 
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)

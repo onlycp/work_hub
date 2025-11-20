@@ -10,11 +10,39 @@ import kotlinx.coroutines.*
 import service.*
 import ui.*
 import kotlin.system.exitProcess
+import javax.swing.JOptionPane
 
-fun main() = application(exitProcessOnExit = false) {
+fun main() {
+    // 设置全局异常处理器
+    Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+        println("💥 未捕获异常 in ${thread.name}: ${throwable.message}")
+        throwable.printStackTrace()
+        // 在Windows上显示一个简单的错误对话框
+        try {
+            JOptionPane.showMessageDialog(
+                null,
+                "应用发生错误: ${throwable.message}\n\n请查看控制台输出获取详细信息。",
+                "WorkHub 错误",
+                JOptionPane.ERROR_MESSAGE
+            )
+        } catch (e: Exception) {
+            // 如果连对话框都显示不了，那就只能打印了
+            println("❌ 无法显示错误对话框: ${e.message}")
+        }
+    }
+
+    application(exitProcessOnExit = false) {
     // 修复 Windows 上的 JMX 错误：禁用 JMX 远程管理
     System.setProperty("com.sun.management.jmxremote", "false")
-    System.setProperty("java.awt.headless", "false")
+
+    // 调试信息：输出系统信息
+    println("🚀 WorkHub 启动中...")
+    println("📊 系统信息:")
+    println("  OS: ${System.getProperty("os.name")} ${System.getProperty("os.version")}")
+    println("  Arch: ${System.getProperty("os.arch")}")
+    println("  Java: ${System.getProperty("java.version")}")
+    println("  User: ${System.getProperty("user.name")}")
+    println("  Dir: ${System.getProperty("user.dir")}")
 
     // 应用初始化状态
     var isInitialized by remember { mutableStateOf(false) }
@@ -36,19 +64,30 @@ fun main() = application(exitProcessOnExit = false) {
         try {
             println("🚀 开始应用初始化...")
             val initResult = AppInitializer.initialize()
+            println("📋 初始化结果: ${if (initResult.isSuccess) "成功" else "失败"}")
+
             if (initResult.isSuccess) {
                 isInitialized = true
+                println("✅ 应用初始化完成")
 
                 // 检查是否已有登录用户
-                if (CurrentUserManager.isLoggedIn()) {
+                val isLoggedInCheck = CurrentUserManager.isLoggedIn()
+                println("👤 检查登录状态: ${if (isLoggedInCheck) "已登录" else "未登录"}")
+
+                if (isLoggedInCheck) {
                     isLoggedIn = true
+                    println("✅ 使用已登录状态")
                 } else {
                     // 检查是否启用自动登录
-                    if (LoginSettingsManager.isAutoLoginEnabled()) {
+                    val autoLoginEnabled = LoginSettingsManager.isAutoLoginEnabled()
+                    println("🔐 自动登录启用: $autoLoginEnabled")
+
+                    if (autoLoginEnabled) {
                         println("🔐 检测到自动登录设置，开始自动登录...")
                         try {
                             val username = LoginSettingsManager.getRememberedUsername()
                             val password = LoginSettingsManager.getRememberedPassword()
+                            println("👤 自动登录用户名: ${username.takeIf { it.isNotBlank() } ?: "未设置"}")
 
                             if (username.isNotBlank() && password.isNotBlank()) {
                                 val loginResult = AppInitializer.loginUser(username)
@@ -59,20 +98,30 @@ fun main() = application(exitProcessOnExit = false) {
                                 } else {
                                     println("❌ 自动登录失败: ${loginResult.exceptionOrNull()?.message}")
                                 }
+                            } else {
+                                println("❌ 自动登录信息不完整")
                             }
                         } catch (e: Exception) {
                             println("❌ 自动登录异常: ${e.message}")
+                            e.printStackTrace()
                         }
                     }
 
                     // 如果没有自动登录或自动登录失败，显示登录对话框
                     showLoginDialog = true
+                    println("📝 显示登录对话框")
                 }
             } else {
-                initializationError = initResult.exceptionOrNull()?.message ?: "初始化失败"
+                val errorMsg = initResult.exceptionOrNull()?.message ?: "初始化失败"
+                initializationError = errorMsg
+                println("❌ 初始化失败: $errorMsg")
+                initResult.exceptionOrNull()?.printStackTrace()
             }
         } catch (e: Exception) {
-            initializationError = e.message ?: "未知错误"
+            val errorMsg = e.message ?: "未知错误"
+            initializationError = errorMsg
+            println("💥 初始化异常: $errorMsg")
+            e.printStackTrace()
         }
     }
 
@@ -217,8 +266,11 @@ fun main() = application(exitProcessOnExit = false) {
         }
     )
 
+    println("🏗️ 创建窗口...")
+
     Window(
         onCloseRequest = {
+            println("❌ 窗口关闭请求")
             // 点击关闭按钮时最小化到托盘
             shouldMinimizeToTray = true
             windowState.isMinimized = true
@@ -231,6 +283,7 @@ fun main() = application(exitProcessOnExit = false) {
         onPreviewKeyEvent = { false },
         focusable = true
     ) {
+        println("✅ 窗口创建成功，准备显示内容")
         // 监听窗口焦点变化，处理任务栏点击
         LaunchedEffect(isWindowVisible) {
             if (isWindowVisible) {
@@ -280,6 +333,7 @@ fun main() = application(exitProcessOnExit = false) {
             }
         }
     }
+}
 }
 
 
