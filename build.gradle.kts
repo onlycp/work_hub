@@ -1,5 +1,14 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 
+// 规范化版本号，确保符合 MSI 要求的 MAJOR.MINOR.BUILD 格式
+fun normalizeVersion(version: String): String {
+    val parts = version.split(".")
+    val major = parts.getOrElse(0) { "1" }.toIntOrNull() ?: 1
+    val minor = parts.getOrElse(1) { "0" }.toIntOrNull() ?: 0
+    val build = parts.getOrElse(2) { "0" }.toIntOrNull() ?: 0
+    return "$major.$minor.$build"
+}
+
 plugins {
     kotlin("jvm")
     kotlin("plugin.serialization") version "2.1.0"
@@ -8,7 +17,10 @@ plugins {
 }
 
 group = "com.free50s"
-version = "1.0-SNAPSHOT"
+
+// 从环境变量读取版本号，如果没有则使用默认值
+val buildVersion = System.getenv("BUILD_VERSION") ?: "1.0-SNAPSHOT"
+version = buildVersion
 
 repositories {
     mavenCentral()
@@ -45,11 +57,23 @@ dependencies {
 compose.desktop {
     application {
         mainClass = "MainKt"
+        
+        // 设置 JVM 参数，禁用 JMX 以避免 Windows 上的 MalformedObjectNameException
+        jvmArgs(
+            "-Djava.awt.headless=false",
+            "-Dcom.sun.management.jmxremote=false",
+            "-Dorg.eclipse.jgit.internal.storage.file.WindowCache.mxBeanDisabled=true",
+            "-Djavax.management.builder.initial=java.lang.management.ManagementFactory"
+        )
 
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
-            packageName = "workhub"
-            packageVersion = "1.0.0"
+            packageName = "WorkHub"
+            // 从环境变量读取包版本号，如果没有则从项目版本中提取（去掉 -SNAPSHOT）
+            val packageVersionStr = System.getenv("PACKAGE_VERSION") ?: buildVersion.removeSuffix("-SNAPSHOT")
+            // 确保版本号格式为 MAJOR.MINOR.BUILD（MSI 要求）
+            val normalizedVersion = normalizeVersion(packageVersionStr)
+            packageVersion = normalizedVersion
 
             // 设置应用图标 - 使用 icon.png 作为主图标，不同平台使用对应格式
             macOS {

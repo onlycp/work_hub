@@ -15,6 +15,11 @@ import java.io.File
  * 负责多用户分支的数据同步和管理
  */
 object GitDataManager {
+    // 在类加载时初始化 JMX 禁用器
+    init {
+        // 确保 JMX 被禁用
+        JMXDisabler
+    }
     private val json = Json {
         prettyPrint = true
         ignoreUnknownKeys = true
