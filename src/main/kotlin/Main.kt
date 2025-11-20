@@ -12,14 +12,27 @@ import ui.*
 import kotlin.system.exitProcess
 
 fun main() = application(exitProcessOnExit = false) {
+    // 修复 Windows 上的 JMX 错误：禁用 JMX 远程管理
+    System.setProperty("com.sun.management.jmxremote", "false")
+    System.setProperty("java.awt.headless", "false")
+
     // 应用初始化状态
     var isInitialized by remember { mutableStateOf(false) }
     var isLoggedIn by remember { mutableStateOf(false) }
     var showLoginDialog by remember { mutableStateOf(false) }
     var initializationError by remember { mutableStateOf<String?>(null) }
 
-    // 应用启动初始化
-    LaunchedEffect(Unit) {
+    // 重新评估应用状态的函数
+    val reevaluateAppState: () -> Unit = {
+        println("🔄 重新评估应用状态...")
+        isInitialized = false
+        isLoggedIn = false
+        showLoginDialog = false
+        initializationError = null
+    }
+
+    // 执行应用初始化的函数
+    suspend fun performAppInitialization() {
         try {
             println("🚀 开始应用初始化...")
             val initResult = AppInitializer.initialize()
@@ -42,7 +55,7 @@ fun main() = application(exitProcessOnExit = false) {
                                 if (loginResult.isSuccess) {
                                     println("✅ 自动登录成功")
                                     isLoggedIn = true
-                                    return@LaunchedEffect
+                                    return
                                 } else {
                                     println("❌ 自动登录失败: ${loginResult.exceptionOrNull()?.message}")
                                 }
@@ -60,6 +73,19 @@ fun main() = application(exitProcessOnExit = false) {
             }
         } catch (e: Exception) {
             initializationError = e.message ?: "未知错误"
+        }
+    }
+
+    // 应用启动初始化
+    LaunchedEffect(Unit) {
+        performAppInitialization()
+    }
+
+    // 监听重新评估状态的触发
+    var reevaluateTrigger by remember { mutableStateOf(0) }
+    LaunchedEffect(reevaluateTrigger) {
+        if (reevaluateTrigger > 0) {
+            performAppInitialization()
         }
     }
 
@@ -234,6 +260,10 @@ fun main() = application(exitProcessOnExit = false) {
                         },
                         onDismiss = {
                             // 不允许关闭登录对话框，除非退出应用
+                        },
+                        onRepositoryConfigured = {
+                            // 仓库配置完成后，触发重新评估应用状态
+                            reevaluateTrigger++
                         }
                     )
                 } else {
@@ -251,6 +281,7 @@ fun main() = application(exitProcessOnExit = false) {
         }
     }
 }
+
 
 /**
  * 执行退出清理并退出应用
