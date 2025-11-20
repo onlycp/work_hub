@@ -1,0 +1,110 @@
+name: Build Multi-Platform Installers
+
+on:
+  push:
+    branches: [ main, master ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:  # 允许手动触发
+
+permissions:
+  contents: write  # 允许创建 Release 和上传文件
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            target: Deb
+            artifact_name: "*.deb"
+            artifact_path: "build/compose/binaries/main/deb/"
+          - os: macos-latest
+            target: Dmg
+            artifact_name: "*.dmg"
+            artifact_path: "build/compose/binaries/main/dmg/"
+          - os: windows-latest
+            target: Msi
+            artifact_name: "*.msi"
+            artifact_path: "build/compose/binaries/main/msi/"
+    
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: 'gradle'
+    
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@v3
+      with:
+        gradle-version: wrapper
+    
+    - name: Grant execute permission for gradlew
+      if: runner.os != 'Windows'
+      run: chmod +x gradlew
+    
+    - name: Configure Gradle for CI
+      shell: bash
+      run: |
+        mkdir -p ~/.gradle
+        echo "org.gradle.daemon=false" >> ~/.gradle/gradle.properties
+        echo "org.gradle.parallel=false" >> ~/.gradle/gradle.properties
+        echo "org.gradle.caching=false" >> ~/.gradle/gradle.properties
+        echo "org.gradle.configureondemand=false" >> ~/.gradle/gradle.properties
+        cat ~/.gradle/gradle.properties
+    
+    - name: Verify WiX Toolset (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $wixPath = "C:\Program Files (x86)\WiX Toolset v3.11\bin"
+        if (Test-Path $wixPath) {
+          Write-Host "✓ WiX Toolset found at $wixPath"
+          echo "$wixPath" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        } else {
+          Write-Host "⚠ WiX Toolset not found, but jpackage should work"
+        }
+    
+    - name: Package ${{ matrix.target }}
+      run: ./gradlew package${{ matrix.target }} --no-daemon --info --stacktrace
+      if: runner.os != 'Windows'
+      timeout-minutes: 25
+      env:
+        GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.parallel=false -Dfile.encoding=UTF-8"
+    
+    - name: Package ${{ matrix.target }} (Windows)
+      shell: cmd
+      run: gradlew.bat package${{ matrix.target }} --no-daemon --console=plain --info
+      if: runner.os == 'Windows'
+      timeout-minutes: 25
+      env:
+        GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.parallel=false -Dfile.encoding=UTF-8"
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: workhub-${{ runner.os }}
+        path: ${{ matrix.artifact_path }}${{ matrix.artifact_name }}
+        retention-days: 7
+    
+    - name: Upload to Release
+      if: startsWith(github.ref, 'refs/tags/v')
+      continue-on-error: true
+      uses: softprops/action-gh-release@v1
+      with:
+        files: ${{ matrix.artifact_path }}${{ matrix.artifact_name }}
+        fail_on_unmatched_files: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+

@@ -1,0 +1,337 @@
+# HomeApp - Compose Desktop 应用开发规范
+
+## 技术栈
+- **语言**: Kotlin 1.9.20
+- **UI框架**: Compose Desktop (JetBrains Compose)
+- **序列化**: kotlinx.serialization
+- **协程**: kotlinx.coroutines
+
+## 代码规范
+
+### 命名约定
+- Kotlin标准命名：类名PascalCase，函数名camelCase，常量UPPER_SNAKE_CASE
+- Composable函数使用PascalCase
+- 状态变量使用`by remember { mutableStateOf() }`
+- 文件名与主要类名一致
+
+### 项目结构
+**严格要求代码模块化，按系统功能划分文件，禁止将所有代码写在Main.kt中**
+
+```
+src/main/kotlin/
+├── Main.kt                    # 仅应用入口和窗口设置
+├── app/                       # 应用核心逻辑层
+│   ├── App.kt                 # 主应用组件和状态管理
+│   ├── AppState.kt            # 应用全局状态
+│   └── Navigation.kt          # 导航和路由逻辑
+├── data/                      # 数据层
+│   ├── models/                # 数据模型
+│   ├── repositories/          # 数据访问层
+│   ├── SettingsManager.kt     # 应用设置管理
+│   ├── SSHConfigManager.kt    # SSH配置管理
+│   └── *Manager.kt            # 各业务数据管理器
+├── service/                   # 业务服务层
+│   ├── network/               # 网络相关服务
+│   ├── SSHClient.kt           # SSH客户端服务
+│   ├── SFTPFileManager.kt     # SFTP文件管理服务
+│   └── *Service.kt            # 各业务服务
+├── ui/                        # UI组件层
+│   ├── common/                # 通用UI组件
+│   ├── home/                  # 首页模块
+│   ├── ops/                   # 运维工具模块
+│   ├── keys/                  # 密钥管理模块
+│   ├── profile/               # 个人资料模块
+│   ├── settings/              # 系统设置模块
+│   └── theme/                 # 主题和样式
+└── utils/                     # 工具类层
+    └── *Utils.kt              # 各工具类
+```
+
+### 模块职责划分
+- **Main.kt**: 仅负责应用启动、窗口配置和依赖初始化
+- **app/**: 应用架构层，负责状态管理和组件编排
+- **data/**: 数据持久化和业务逻辑，不包含UI代码
+- **service/**: 外部服务调用和业务处理逻辑
+- **ui/**: 纯UI组件，按功能模块划分子目录
+- **utils/**: 通用工具函数和辅助类
+
+### 设计系统
+**所有UI组件必须使用统一的设计系统，禁止硬编码样式值**
+
+- **颜色**: 使用 `AppColors.*` (Primary, Success, Warning, Error等)
+- **字体大小**: 严格按照字体层级使用
+  - `TitleLarge`: 15.sp（标题）
+  - `TitleMedium`: 13.sp（副标题）
+  - `BodyLarge`: 12.sp（正文）
+  - `BodySmall`: 11.sp（默认字体）
+  - `Caption`: 10.sp（辅助文字）
+  - 侧边栏文字: 9.sp（特殊情况下的小字体）
+- **间距**: 使用 `AppDimensions.*` (SpaceS, SpaceM, SpaceL等)
+- **透明度**: 使用 `AppAlpha.*` (Selected, Disabled等)
+
+示例：
+```kotlin
+// ✅ 正确
+Text(
+    text = "Hello",
+    fontSize = AppTypography.Body,
+    color = AppColors.TextPrimary
+)
+
+// ❌ 错误
+Text(
+    text = "Hello",
+    fontSize = 12.sp,
+    color = Color(0xFF212121)
+)
+```
+
+### 数据持久化
+- 应用设置: `~/.app_settings.json`
+- 使用 kotlinx.serialization 进行 JSON 序列化
+- 保存时使用 `prettyPrint = true`
+
+### 状态管理
+- 使用 `StateFlow` 管理应用状态
+- 使用 `mutableStateOf` 管理UI状态
+- 避免在Composable外部直接修改状态
+- 使用 `rememberCoroutineScope()` 启动协程
+
+### 错误处理
+- 所有异步操作使用 `Result<T>` 返回类型
+- 捕获异常并提供友好的错误消息
+- 在控制台打印调试信息（使用 println）
+- 在UI上显示用户友好的状态文本
+
+## 系统设置规范
+**系统设置采用分类标签页设计，提供完整的配置功能**
+
+- **设置界面结构**：
+  - 左侧边栏：设置分类列表（180dp宽度）
+  - 右侧内容区：对应设置项的详细配置
+  - 底部按钮：取消/保存操作按钮
+
+- **设置分类**：
+  - 通用：基础设置、用户信息、自动保存等
+  - 外观：界面字体设置（字体家族、大小、行高）
+  - AI助手：API地址、密钥、模型配置
+  - Git同步：仓库地址、用户名、密码/Token、分支、启动时同步、退出时同步
+
+- **设置数据结构**：
+  - `AppSettings`：主设置类，包含所有设置项
+  - `FontSettings`：字体配置（家族、大小、行高）
+  - `GitSyncSettings`：Git同步配置
+  - `AISettings`：AI助手配置
+
+- **设置持久化**：
+  - 使用 JSON 序列化保存到用户目录
+  - 支持设置的实时更新和应用
+
+- **图标使用**：
+  - 通用设置：`Icons.Default.Settings`
+  - 外观设置：`Icons.Default.Favorite`
+  - AI助手：`Icons.Default.Star`
+  - Git同步：`Icons.Default.Sync`
+  - 密码输入：使用 `PasswordVisualTransformation`
+  - 右侧箭头：`Icons.AutoMirrored.Default.ArrowForward`
+
+- **AppDimensions 返回类型**：
+  - 所有尺寸值返回 `Dp` 类型，直接使用无需 `.dp` 后缀
+
+## 界面布局规范
+
+### 窗口行为规范
+- **默认状态**：应用启动时窗口默认最大化（非全屏）
+- **窗口控制**：支持用户手动调整窗口大小和位置
+- **响应式布局**：界面元素自适应窗口尺寸变化
+
+### 主界面布局结构
+**应用采用经典的三段式布局，确保导航清晰和内容聚焦**
+
+- **顶部工具栏**：应用标识、标题、"效率工具集"副标题、日志和设置按钮
+  - 使用渐变背景和光晕效果的图标设计
+  - 右侧按钮紧凑排列，带分隔线
+  - 高度适中，视觉平衡
+
+- **左侧功能栏**：垂直图标导航栏
+  - 宽度56dp，Surface容器带背景色和阴影
+  - 模块按钮：56dp宽度，图标40×40dp圆角容器，选中时主色背景
+  - 文字标签：图标下方，选中时主色，hover效果背景变化
+  - 图标尺寸24dp，选中状态FontWeight.Medium突出显示
+
+- **右侧内容区**：主要工作区域
+  - 根据选中模块动态切换内容
+  - 支持多种布局形式，包括分栏布局
+
+- **底部状态栏**：状态信息显示区域
+  - 显示操作结果和系统状态
+  - 使用 `AppTypography.Caption` 字体
+
+### 通用布局原则
+- 使用 `Modifier` 链式调用组织布局
+- 合理使用 `weight(1f)` 进行自适应布局
+- 避免在 Composable 中进行耗时操作
+
+### Hover交互设计
+- **避免闪烁**：不要使用Popup组件显示工具提示
+- **推荐方式**：hover时直接改变组件属性
+  ```kotlin
+  Text(
+      text = title,
+      maxLines = if (isHovered) Int.MAX_VALUE else 1,
+      overflow = if (isHovered) TextOverflow.Visible else TextOverflow.Ellipsis,
+      modifier = Modifier.hoverable(interactionSource)
+  )
+  ```
+- 使用 `hoverable` + `collectIsHoveredAsState()` 检测hover状态
+
+### 按钮布局规范
+- 操作密集的界面采用两行布局
+- 第一行：标题和主要操作
+- 第二行：次要操作按钮（小图标+小字体）
+- 按钮尺寸：32×32dp，图标16×16dp
+- 使用 `AppTypography.Caption` 作为按钮字体
+
+### 个人信息位置
+- 个人信息位于左侧功能栏底部
+- 使用 `AccountCircle` 图标
+- 点击后在右侧内容区显示个人信息视图
+
+### 个人信息界面风格
+**个人信息界面采用卡片式布局，突出用户身份信息**
+
+- **布局结构**：垂直滚动布局，确保内容完整展示
+- **信息卡片**：使用圆角卡片容器，统一的间距和阴影
+- **用户信息展示**：
+  - 用户头像：圆形设计，使用默认头像图标
+  - 用户信息：用户名、用户ID等关键信息
+  - 状态信息：显示系统状态和时间信息
+- **操作按钮**：
+  - 主要操作使用突出样式
+  - 次要信息使用只读文本展示
+- **视觉层次**：标题使用粗体，重要信息使用强调色
+
+### 系统设置界面风格
+**系统设置采用Tab标签页设计，每个功能分组使用独立的Tab**
+
+- **界面结构**：Tab导航 + 内容区域布局
+- **Tab导航**：
+  - 使用ScrollableTabRow组件，支持滚动
+  - 每个Tab高度32.dp，显示14.dp小图标和11.sp文字
+  - Tab有紧凑的内边距(4.dp水平，2.dp垂直)，不强制铺满宽度
+  - Tab背景使用BackgroundSecondary颜色
+- **Tab内容区域**：
+  - 每个Tab显示对应的设置分组内容
+  - 使用Box容器占满剩余空间
+  - 内容区域有统一的内边距
+- **设置项布局**：
+  - 开关控件、文本输入、可搜索下拉框等统一风格
+  - 相关设置项分组使用分隔线
+  - 表单控件使用统一的间距和样式
+- **可搜索下拉框**：
+  - 支持实时搜索过滤选项
+  - 显示搜索框和清除按钮
+  - 选中项高亮显示
+  - 无匹配结果时显示提示信息
+- **响应式设计**：Tab内容区域自适应剩余空间
+
+## Compose Desktop 最佳实践
+- 使用 `remember` 缓存计算结果
+- 使用 `LaunchedEffect` 执行副作用
+- 使用 `Modifier` 链式调用
+- 合理使用 `weight(1f)` 进行布局
+- 避免在 Composable 中进行耗时操作
+
+## 重要约定
+
+### 文档规则
+**⚠️ 重要：除非用户明确要求，否则不要创建或修改以下文件：**
+- README.md
+- FEATURES.md
+- CHANGELOG.md
+- 任何 .md 文档文件
+
+只在用户明确说"写文档"、"创建README"等情况下才创建文档。
+
+### 代码修改原则
+1. **严格模块化**：按系统功能划分文件，禁止将所有代码写在Main.kt中
+2. **单一职责**：每个文件/类只负责一个明确的功能模块
+3. **分层架构**：严格遵循data/service/ui分层，业务逻辑不混在UI中
+4. **优先修改现有代码**，不要轻易创建新文件
+5. **保持一致性**：新功能应遵循现有代码风格和模块结构
+6. **使用设计系统**：所有样式必须引用 AppTheme.kt
+7. **完整实现**：不要留下 TODO 或占位符代码
+8. **测试可行性**：确保代码可编译运行
+9. **设置界面平铺**：系统设置直接在主界面平铺显示，不使用弹窗
+10. **可搜索下拉框**：所有下拉选择控件必须支持搜索和清除功能
+11. **表单组件尺寸**：所有表单输入框统一使用InputHeightSmall(48.dp)，字体使用14.sp
+
+### 常见问题解决
+1. **图标弃用**: 避免使用 `Icons.Default.Send`（已弃用），使用 `Icons.Default.PlayArrow`
+2. **UTF-8支持**: 所有字符串操作明确指定 `Charsets.UTF_8`
+3. **焦点管理**: 输入框需要时使用 `FocusRequester`
+4. **网络调用**: 必须在 `withContext(Dispatchers.IO)` 中执行
+5. **类型安全**: 确保 `Dp`、`sp` 等 Compose 单位类型正确使用，避免 `Int` 到 `Dp` 的隐式转换
+6. **命名冲突**: 避免在同一作用域中定义同名的不同类型属性（如同时定义 `TextStyle` 和 `TextUnit` 的 `BodySmall`）
+7. **向后兼容**: 为旧属性提供别名时，使用不同名称（如 `BodySmallFontSize` 而不是 `BodySmall`）
+8. **滚动布局**: 避免同时使用 `fillMaxSize()` 和 `verticalScroll()`，优先使用 `LazyColumn` 进行垂直滚动，避免在LazyColumn的item内部使用verticalScroll()
+
+## Git 工作流
+- 不要修改 .gitignore（除非用户明确要求）
+- 不要提交 build/ 目录
+- 不要强制推送到 main/master
+
+## AI助手行为准则
+1. **直接实现功能**，不要只提供建议
+2. **一次性完成**，避免分步骤让用户多次确认
+3. **自动修复错误**，遇到编译错误立即修复
+4. **代码优先**，少说多做
+5. **不写文档**，除非明确要求
+6. **保持简洁**，避免冗长的解释
+
+## 依赖管理
+当前依赖版本（build.gradle.kts）：
+```kotlin
+- Kotlin: 1.9.20
+- kotlinx-coroutines: 1.7.3
+- kotlinx-serialization: 1.6.0
+```
+
+**添加新依赖前必须考虑：**
+1. 是否真的需要
+2. 是否与现有库冲突
+3. 是否支持 JVM Desktop
+
+## Git 存储与同步
+
+### Git 同步功能概述
+**应用支持将数据通过Git进行分布式存储和同步**
+
+- **同步时机**：应用启动时拉取、退出时推送、手动同步
+- **存储格式**：JSON格式的配置文件和数据文件
+- **安全考虑**：敏感信息加密存储，Git仓库使用HTTPS或SSH认证
+
+### Git 配置规范
+- **仓库路径**：默认使用应用专用的数据目录
+- **分支策略**：主分支 `main` 或 `master`
+- **提交信息**：使用中文描述，格式：`[类型] 描述信息`
+- **文件命名**：使用下划线分隔，英文命名
+
+### 同步策略
+- **启动同步**：应用启动时自动拉取远程最新数据
+- **退出同步**：应用退出时自动推送本地修改
+- **冲突解决**：优先使用远程数据，避免数据丢失
+- **网络异常**：降级到本地模式，不影响应用正常使用
+
+### Git 工作流
+- **禁止操作**：
+  - 不要修改 `.gitignore`（除非用户明确要求）
+  - 不要提交 `build/` 目录
+  - 不要强制推送到 `main/master` 分支
+  - 不要在Git仓库中存储敏感信息
+- **推荐操作**：
+  - 定期提交数据变更
+  - 使用有意义的提交信息
+  - 在多个设备间同步数据
+  - 定期备份Git仓库
+

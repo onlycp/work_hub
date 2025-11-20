@@ -1,0 +1,20 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <!-- macOS风格方形背景 -->
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="4" dy="4" stdDeviation="2" flood-color="black" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+
+  <!-- 阴影背景 -->
+  <rect x="56" y="60" width="400" height="400" rx="80" fill="black" opacity="0.3" filter="url(#shadow)"/>
+
+  <!-- 主背景 -->
+  <rect x="56" y="56" width="400" height="400" rx="80" fill="#4A90E2"/>
+
+  <!-- W + H 文字组合 - 使用艺术字体样式 -->
+  <text x="256" y="290" font-family="Optima, Arial, sans-serif" font-size="140" font-weight="normal" text-anchor="middle" fill="white">W+H</text>
+
+  <!-- 微妙边框 -->
+  <rect x="56" y="56" width="400" height="400" rx="80" fill="none" stroke="white" stroke-width="2" opacity="0.5"/>
+</svg>
