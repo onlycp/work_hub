@@ -40,6 +40,20 @@ object GitDataManager {
     private var repository: Repository? = null
 
     init {
+        // 在初始化时设置系统属性，禁用 JMX 以避免 Windows 上的 MalformedObjectNameException
+        // 这必须在任何 JGit 操作之前设置
+        try {
+            System.setProperty("java.awt.headless", "false")
+            System.setProperty("com.sun.management.jmxremote", "false")
+            // 禁用 JGit 的 JMX 监控（这是最关键的设置）
+            System.setProperty("org.eclipse.jgit.internal.storage.file.WindowCache.mxBeanDisabled", "true")
+            // 额外禁用 MBeanServer 创建（Windows 兼容性）
+            System.setProperty("java.lang.management.ManagementFactory.createPlatformMXBean", "false")
+        } catch (e: Exception) {
+            // 忽略设置系统属性时的异常
+            println("⚠️ GitDataManager: 设置系统属性时出现异常: ${e.message}")
+        }
+
         // 确保目录存在
         workhubDir.mkdirs()
         usersDir.mkdirs()

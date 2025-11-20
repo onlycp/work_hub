@@ -85,6 +85,15 @@ object AppInitializer {
      * 当已经有了用户之后，就不能自动创建用户并登录了
      */
     suspend fun loginUser(userName: String): Result<Unit> = withContext(Dispatchers.IO) {
+        // 在登录前再次确保 JMX 被禁用（Windows 兼容性）
+        try {
+            System.setProperty("org.eclipse.jgit.internal.storage.file.WindowCache.mxBeanDisabled", "true")
+            System.setProperty("com.sun.management.jmxremote", "false")
+            System.setProperty("java.lang.management.ManagementFactory.createPlatformMXBean", "false")
+        } catch (e: Exception) {
+            // 忽略设置异常
+        }
+
         try {
             // 获取所有成员数据
             val mergedData = GitDataManager.getAllMergedData()

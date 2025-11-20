@@ -66,6 +66,11 @@ fun main() {
                     if (LoginSettingsManager.isAutoLoginEnabled()) {
                         Logger.log("🔐 检测到自动登录设置，开始自动登录...")
                         try {
+                            // 在自动登录前确保 JMX 被禁用
+                            System.setProperty("org.eclipse.jgit.internal.storage.file.WindowCache.mxBeanDisabled", "true")
+                            System.setProperty("com.sun.management.jmxremote", "false")
+                            Logger.log("✅ 自动登录前 JMX 禁用设置")
+
                             val username = LoginSettingsManager.getRememberedUsername()
                             val password = LoginSettingsManager.getRememberedPassword()
 
