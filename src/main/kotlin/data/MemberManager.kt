@@ -98,6 +98,33 @@ object MemberManager {
             val newMembers = currentMembers + newMember
             _members.value = newMembers
             saveMembers()
+
+            // 检查该成员是否已经有用户目录和Git仓库，如果没有则自动创建（参考登录时的处理）
+            val userDir = File(System.getProperty("user.home"), ".workhub/users/${newMember.name}")
+            val userGitDir = File(userDir, ".git")
+            
+            if (!userDir.exists() || !userGitDir.exists()) {
+                println("成员 ${newMember.name} 还没有用户目录和Git仓库，自动创建...")
+                
+                // 创建用户分支（独立的Git仓库），参考登录时的处理
+                val branchResult = GitDataManager.createUserBranch(newMember.name)
+                if (branchResult.isFailure) {
+                    println("⚠️ 创建用户分支失败，但成员已添加: ${branchResult.exceptionOrNull()?.message}")
+                    // 成员已添加成功，这里不返回失败，只记录警告
+                } else {
+                    println("✅ 成员 ${newMember.name} 的用户分支已创建")
+                    
+                    // 保存成员数据到新创建的用户仓库中（参考登录时的处理）
+                    val userData = UserData(members = listOf(newMember))
+                    val saveResult = GitDataManager.saveCurrentUserData(newMember.name, userData)
+                    if (saveResult.isFailure) {
+                        println("⚠️ 保存成员数据到用户仓库失败: ${saveResult.exceptionOrNull()?.message}")
+                    }
+                }
+            } else {
+                println("✅ 成员 ${newMember.name} 已添加（用户目录已存在）")
+            }
+
             Result.success(newMember)
         } catch (e: Exception) {
             Result.failure(e)
@@ -132,6 +159,9 @@ object MemberManager {
             val newMembers = currentMembers.map { if (it.id == updatedMember.id) finalMember else it }
             _members.value = newMembers
             saveMembers()
+
+            println("✅ 成员 ${finalMember.name} 已更新")
+
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)

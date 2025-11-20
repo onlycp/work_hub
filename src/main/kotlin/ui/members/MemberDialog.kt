@@ -18,6 +18,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import data.CurrentUserManager
 import data.MemberData
 import data.MemberManager
 import theme.*
@@ -31,7 +32,7 @@ fun MemberDialog(
     member: MemberData?,
     onDismiss: () -> Unit,
     onConfirm: (MemberData) -> Unit,
-    currentUserId: String = ""
+    currentUserId: String = CurrentUserManager.getCurrentUserId()
 ) {
     var name by remember { mutableStateOf(member?.name ?: "") }
     var password by remember { mutableStateOf(member?.password ?: "") }
@@ -168,26 +169,32 @@ fun MemberDialog(
 
                     Button(
                         onClick = {
+                            System.out.println("保存按钮被点击")
                             // 验证输入
                             var hasError = false
 
                             if (name.isBlank()) {
                                 nameError = "姓名不能为空"
                                 hasError = true
+                                System.out.println("姓名为空")
                             } else if (MemberManager.isMemberNameExists(name, if (isEditing) member?.id else null)) {
                                 nameError = "姓名已存在"
                                 hasError = true
+                                System.out.println("姓名已存在: $name")
                             }
 
                             if (number.isBlank()) {
                                 numberError = "编号不能为空"
                                 hasError = true
+                                System.out.println("编号为空")
                             } else if (MemberManager.isMemberNumberExists(number, if (isEditing) member?.id else null)) {
                                 numberError = "编号已存在"
                                 hasError = true
+                                System.out.println("编号已存在: $number")
                             }
 
                             if (!hasError) {
+                                System.out.println("验证通过，准备调用onConfirm")
                                 val memberData = MemberData(
                                     id = member?.id ?: UUID.randomUUID().toString(),
                                     name = name.trim(),
@@ -199,6 +206,8 @@ fun MemberDialog(
                                     createdBy = currentUserId
                                 )
                                 onConfirm(memberData)
+                            } else {
+                                System.out.println("验证失败，有错误")
                             }
                         },
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)

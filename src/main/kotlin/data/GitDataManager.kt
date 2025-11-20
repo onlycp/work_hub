@@ -24,6 +24,7 @@ object GitDataManager {
     private val workhubDir = File(System.getProperty("user.home"), ".workhub")
     private val gitDir = File(workhubDir, "git")
     private val usersDir = File(workhubDir, "users")
+    private val membersDir = File(workhubDir, "members")
     private val mergedDir = File(workhubDir, "merged")
     // 新增：homehub/repo 目录结构
     private val homehubDir = File(System.getProperty("user.home"), "homehub")
@@ -369,6 +370,33 @@ object GitDataManager {
     }
 
     /**
+     * 为成员创建初始数据文件
+     */
+    private fun createInitialMemberDataFiles(memberDir: File, memberName: String) {
+        // 创建README文件
+        val readme = File(memberDir, "README.md")
+        readme.writeText("""
+            # Member: $memberName
+
+            This directory contains configuration data for member: $memberName.
+
+            Member data is shared across all users, but each member can have their own
+            configuration and workspace settings.
+
+            Files:
+            - member_config.json: Member-specific configuration
+            - workspace.json: Workspace preferences
+        """.trimIndent())
+
+        // 创建空的配置文件
+        val memberConfig = File(memberDir, "member_config.json")
+        memberConfig.writeText("{}")
+
+        val workspace = File(memberDir, "workspace.json")
+        workspace.writeText("{}")
+    }
+
+    /**
      * 同步所有用户数据
      * 现在每个用户目录都是独立的Git仓库，需要分别更新
      */
@@ -534,6 +562,77 @@ object GitDataManager {
             }.filter { it.isNotEmpty() && !it.contains("HEAD") }
         } catch (e: Exception) {
             emptyList()
+        }
+    }
+
+    /**
+     * 创建成员分支仓库
+     * 成员分支在当前用户的users/xxx目录下创建，参考createUserBranch的实现
+     */
+    suspend fun createMemberBranch(memberName: String): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            // 获取当前用户名
+            val currentUserName = CurrentUserManager.getCurrentUserId()
+            if (currentUserName.isEmpty()) {
+                return@withContext Result.failure(Exception("未登录用户，无法创建成员分支"))
+            }
+
+            println("开始创建成员分支: $memberName (用户: $currentUserName)")
+
+            // 1. 在当前用户的目录下创建成员目录
+            val userLocalDir = File(usersDir, currentUserName)
+            if (!userLocalDir.exists()) {
+                return@withContext Result.failure(Exception("用户目录不存在: $currentUserName"))
+            }
+
+            val memberLocalDir = File(userLocalDir, memberName)
+            memberLocalDir.mkdirs()
+            println("创建成员目录: ${memberLocalDir.absolutePath}")
+
+            // 2. 在成员目录中创建独立的Git仓库
+            val memberGit = Git.init().setDirectory(memberLocalDir).call()
+
+            try {
+                // 3. 创建初始化数据文件
+                createInitialMemberDataFiles(memberLocalDir, memberName)
+
+                // 4. 添加所有文件到Git
+                memberGit.add().addFilepattern(".").call()
+
+                // 5. 创建初始提交
+                memberGit.commit().setMessage("Initial commit for member: $memberName").call()
+
+                // 6. 配置远程仓库（使用主仓库地址）
+                val repoSettings = RepositorySettingsManager.getCurrentSettings()
+                if (repoSettings.enabled && repoSettings.repositoryUrl.isNotBlank()) {
+                    memberGit.remoteAdd().setName("origin").setUri(org.eclipse.jgit.transport.URIish(repoSettings.repositoryUrl)).call()
+
+                    // 7. 设置上游分支为 用户名/成员名
+                    val branchName = "$currentUserName/$memberName"
+                    memberGit.checkout().setCreateBranch(true).setName(branchName).call()
+
+                    // 8. 推送到远程仓库
+                    val pushCommand = memberGit.push().setRemote("origin")
+                    if (repoSettings.username.isNotBlank() && repoSettings.password.isNotBlank()) {
+                        pushCommand.setCredentialsProvider(UsernamePasswordCredentialsProvider(repoSettings.username, repoSettings.password))
+                    }
+                    pushCommand.call()
+
+                    println("✅ 成员 $memberName 的独立Git仓库已创建并推送到远程分支 $branchName")
+                } else {
+                    println("⚠️ 仓库未配置，无法推送成员分支到远程")
+                }
+
+            } finally {
+                // 关闭成员Git仓库
+                memberGit.close()
+            }
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            println("❌ 创建成员分支失败: ${e.message}")
+            e.printStackTrace()
+            Result.failure(e)
         }
     }
 

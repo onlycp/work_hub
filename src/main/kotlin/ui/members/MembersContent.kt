@@ -15,6 +15,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import data.CurrentUserManager
 import data.MemberData
 import data.MemberManager
 import kotlinx.coroutines.launch
@@ -125,8 +126,11 @@ private fun MemberTableRow(
 fun MembersContent(
     onStatusMessage: (String) -> Unit = {}
 ) {
+    System.out.println("MembersContent组件被创建")
     val scope = rememberCoroutineScope()
     val members by MemberManager.members.collectAsState()
+    val currentUserId = CurrentUserManager.getCurrentUserId()
+    System.out.println("当前成员数量: ${members.size}")
     var showMemberDialog by remember { mutableStateOf(false) }
     var editingMember by remember { mutableStateOf<MemberData?>(null) }
     var showDeleteConfirmDialog by remember { mutableStateOf<MemberData?>(null) }
@@ -295,6 +299,9 @@ fun MembersContent(
 
     // 成员对话框
     if (showMemberDialog) {
+        // 在lambda外部捕获editingMember的值，避免在lambda中捕获可变状态
+        val isEditing = editingMember != null
+        
         MemberDialog(
             member = editingMember,
             onDismiss = {
@@ -302,22 +309,41 @@ fun MembersContent(
                 editingMember = null
             },
             onConfirm = { member ->
+                System.out.println("onConfirm回调被调用，成员: ${member.name}")
                 scope.launch {
-                    val result = if (editingMember != null) {
-                        MemberManager.updateMember(member)
-                    } else {
-                        MemberManager.addMember(member)
-                    }
+                    try {
+                        System.out.println("开始${if (isEditing) "更新" else "添加"}成员: ${member.name}")
+                        // 添加一个小延迟来测试协程是否执行
+                        kotlinx.coroutines.delay(100)
 
-                    if (result.isSuccess) {
-                        onStatusMessage("✅ 成员${if (editingMember != null) "更新" else "添加"}成功")
-                        showMemberDialog = false
-                        editingMember = null
-                    } else {
-                        onStatusMessage("❌ 成员操作失败: ${result.exceptionOrNull()?.message}")
+                        val result = if (isEditing) {
+                            MemberManager.updateMember(member)
+                        } else {
+                            MemberManager.addMember(member)
+                        }
+
+                        System.out.println("成员操作结果: ${result.isSuccess}")
+                        if (result.isSuccess) {
+                            System.out.println("设置UI状态: showMemberDialog = false, editingMember = null")
+                            onStatusMessage("✅ 成员${if (isEditing) "更新" else "添加"}成功")
+                            // 强制重组UI状态
+                            showMemberDialog = false
+                            editingMember = null
+                            System.out.println("成员操作成功完成")
+                        } else {
+                            val errorMsg = "❌ 成员操作失败: ${result.exceptionOrNull()?.message}"
+                            onStatusMessage(errorMsg)
+                            System.out.println(errorMsg)
+                        }
+                    } catch (e: Exception) {
+                        val errorMsg = "❌ 成员操作异常: ${e.message}"
+                        onStatusMessage(errorMsg)
+                        System.out.println(errorMsg)
+                        e.printStackTrace()
                     }
                 }
-            }
+            },
+            currentUserId = currentUserId
         )
     }
 
