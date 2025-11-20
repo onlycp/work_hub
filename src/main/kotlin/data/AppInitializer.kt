@@ -89,9 +89,13 @@ object AppInitializer {
         try {
             System.setProperty("org.eclipse.jgit.internal.storage.file.WindowCache.mxBeanDisabled", "true")
             System.setProperty("com.sun.management.jmxremote", "false")
+            System.setProperty("com.sun.management.jmxremote.port", "")
             System.setProperty("java.lang.management.ManagementFactory.createPlatformMXBean", "false")
+            System.setProperty("javax.management.builder.initial", "")
+            System.setProperty("org.eclipse.jgit.util.FS.DETECTED", "false")
         } catch (e: Exception) {
             // 忽略设置异常
+            println("⚠️ 登录前 JMX 禁用失败: ${e.message}")
         }
 
         try {

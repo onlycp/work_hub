@@ -69,6 +69,9 @@ fun main() {
                             // 在自动登录前确保 JMX 被禁用
                             System.setProperty("org.eclipse.jgit.internal.storage.file.WindowCache.mxBeanDisabled", "true")
                             System.setProperty("com.sun.management.jmxremote", "false")
+                            System.setProperty("com.sun.management.jmxremote.port", "")
+                            System.setProperty("java.lang.management.ManagementFactory.createPlatformMXBean", "false")
+                            System.setProperty("javax.management.builder.initial", "")
                             Logger.log("✅ 自动登录前 JMX 禁用设置")
 
                             val username = LoginSettingsManager.getRememberedUsername()

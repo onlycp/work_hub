@@ -50,8 +50,8 @@ dependencies {
     // System tray support (cross-platform native)
     implementation("io.github.kdroidfilter:composenativetray:1.0.4")
 
-    // JGit for Git operations
-    implementation("org.eclipse.jgit:org.eclipse.jgit:6.7.0.202309050840-r")
+    // JGit for Git operations - 使用较新版本，可能修复了 JMX 问题
+    implementation("org.eclipse.jgit:org.eclipse.jgit:6.8.0.202311291450-r")
 }
 
 compose.desktop {
