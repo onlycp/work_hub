@@ -13,6 +13,8 @@ import utils.Logger
 import kotlin.system.exitProcess
 import java.net.ServerSocket
 import java.net.SocketException
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.CoroutineName
 
 /**
  * 检查应用是否已有实例在运行
@@ -48,6 +50,35 @@ fun checkSingleInstance(): Boolean {
 }
 
 fun main() {
+    // 设置全局未捕获异常处理器 - 捕获所有逃逸的异常包括Error
+    Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+        when (throwable) {
+            is OutOfMemoryError -> {
+                Logger.error("未捕获的内存不足错误 (线程: ${thread.name})", throwable)
+                println("💥 未捕获的内存不足错误 (线程: ${thread.name}): ${throwable.message}")
+                println("🚨 建议重启应用以释放内存")
+            }
+            is StackOverflowError -> {
+                Logger.error("未捕获的栈溢出错误 (线程: ${thread.name})", throwable)
+                println("💥 未捕获的栈溢出错误 (线程: ${thread.name}): ${throwable.message}")
+                println("🚨 可能存在递归调用问题，建议检查代码逻辑")
+            }
+            is Error -> {
+                Logger.error("未捕获的系统错误 (线程: ${thread.name})", throwable)
+                println("💥 未捕获的系统错误 (线程: ${thread.name}): ${throwable.javaClass.simpleName} - ${throwable.message}")
+                println("🚨 系统级错误，应用可能无法正常运行")
+            }
+            is Exception -> {
+                Logger.error("未捕获的异常 (线程: ${thread.name})", throwable)
+                println("💥 未捕获的异常 (线程: ${thread.name}): ${throwable.javaClass.simpleName} - ${throwable.message}")
+            }
+            else -> {
+                Logger.error("未捕获的未知异常 (线程: ${thread.name})", throwable)
+                println("💥 未捕获的未知异常 (线程: ${thread.name}): ${throwable.javaClass.simpleName} - ${throwable.message}")
+            }
+        }
+    }
+
     // 检查单实例运行
     if (!checkSingleInstance()) {
         Logger.log("📤 已有实例在运行，退出应用")
@@ -93,6 +124,36 @@ fun main() {
     // 应用启动初始化 - 使用超时机制，避免阻塞
     LaunchedEffect(Unit) {
         try {
+            // 设置协程异常处理器
+            val coroutineExceptionHandler = CoroutineExceptionHandler { coroutineContext, throwable ->
+                when (throwable) {
+                    is OutOfMemoryError -> {
+                        Logger.error("协程内存不足错误 (${coroutineContext[CoroutineName]?.name ?: "unknown"})", throwable)
+                        println("💥 协程内存不足错误: ${throwable.message}")
+                    }
+                    is StackOverflowError -> {
+                        Logger.error("协程栈溢出错误 (${coroutineContext[CoroutineName]?.name ?: "unknown"})", throwable)
+                        println("💥 协程栈溢出错误: ${throwable.message}")
+                    }
+                    is Error -> {
+                        Logger.error("协程系统错误 (${coroutineContext[CoroutineName]?.name ?: "unknown"})", throwable)
+                        println("💥 协程系统错误: ${throwable.javaClass.simpleName} - ${throwable.message}")
+                    }
+                    is Exception -> {
+                        Logger.error("协程异常 (${coroutineContext[CoroutineName]?.name ?: "unknown"})", throwable)
+                        println("💥 协程异常: ${throwable.javaClass.simpleName} - ${throwable.message}")
+                    }
+                    else -> {
+                        Logger.error("协程未知异常 (${coroutineContext[CoroutineName]?.name ?: "unknown"})", throwable)
+                        println("💥 协程未知异常: ${throwable.javaClass.simpleName} - ${throwable.message}")
+                    }
+                }
+            }
+            // 设置协程异常处理器
+            val exceptionHandler = CoroutineExceptionHandler { coroutineContext, throwable ->
+                Logger.error("协程异常 (${coroutineContext[CoroutineName]?.name ?: "unknown"})", throwable)
+                println("💥 协程异常: ${throwable.javaClass.simpleName} - ${throwable.message}")
+            }
             Logger.log("🚀 开始应用初始化...")
             Logger.log("🪟 窗口应该已经显示，showLoginDialog = $showLoginDialog")
 

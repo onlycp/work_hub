@@ -372,8 +372,6 @@ fun MembersContent(
                 scope.launch {
                     try {
                         System.out.println("开始${if (isEditing) "更新" else "添加"}成员: ${member.name}")
-                        // 添加一个小延迟来测试协程是否执行
-                        kotlinx.coroutines.delay(100)
 
                         val result = if (isEditing) {
                             MemberManager.updateMember(member)

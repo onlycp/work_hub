@@ -708,6 +708,18 @@ object GitDataManager {
             mergeAllUserData()
 
             Result.success(Unit)
+        } catch (e: OutOfMemoryError) {
+            // 处理内存不足错误
+            println("❌ 内存不足错误: ${e.message}")
+            Result.failure(RuntimeException("内存不足，无法执行Git操作", e))
+        } catch (e: StackOverflowError) {
+            // 处理栈溢出错误
+            println("❌ 栈溢出错误: ${e.message}")
+            Result.failure(RuntimeException("栈溢出，无法执行Git操作", e))
+        } catch (e: Error) {
+            // 处理所有其他 Error 类型异常
+            println("❌ 系统错误: ${e.message}")
+            Result.failure(RuntimeException("系统错误，无法执行Git操作: ${e.javaClass.simpleName}", e))
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -798,6 +810,18 @@ object GitDataManager {
             mergeAllUserData()
 
             Result.success(Unit)
+        } catch (e: OutOfMemoryError) {
+            // 处理内存不足错误
+            println("❌ 内存不足错误: ${e.message}")
+            Result.failure(RuntimeException("内存不足，无法执行Git操作", e))
+        } catch (e: StackOverflowError) {
+            // 处理栈溢出错误
+            println("❌ 栈溢出错误: ${e.message}")
+            Result.failure(RuntimeException("栈溢出，无法执行Git操作", e))
+        } catch (e: Error) {
+            // 处理所有其他 Error 类型异常
+            println("❌ 系统错误: ${e.message}")
+            Result.failure(RuntimeException("系统错误，无法执行Git操作: ${e.javaClass.simpleName}", e))
         } catch (e: Exception) {
             Result.failure(e)
         }
