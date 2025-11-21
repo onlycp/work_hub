@@ -303,7 +303,7 @@ object GitDataManager {
      * 5. git init
      * 6. git add 及 commit
      * 7. 配置远程仓库
-     * 8. 按用户名作为分支推送上去
+     * 8. 检查分支是否存在，如果不存在则创建并推送
      */
     suspend fun createUserBranch(userName: String): Result<Unit> = withContext(Dispatchers.IO) {
         try {
@@ -311,37 +311,82 @@ object GitDataManager {
             val userLocalDir = File(usersDir, userName)
             userLocalDir.mkdirs()
 
-            // 2. 在用户目录中创建独立的Git仓库
-            val userGit = Git.init().setDirectory(userLocalDir).call()
+            // 2. 检查是否已有Git仓库
+            val gitDir = File(userLocalDir, ".git")
+            val userGit = if (gitDir.exists()) {
+                // 如果已存在，打开现有仓库
+                Git.open(userLocalDir)
+            } else {
+                // 创建新的Git仓库
+                Git.init().setDirectory(userLocalDir).call()
+            }
 
             try {
-                // 3. 创建初始化数据文件
-                createInitialUserDataFiles(userLocalDir, userName)
-
-                // 4. 添加所有文件到Git
-                userGit.add().addFilepattern(".").call()
-
-                // 5. 创建初始提交
-                userGit.commit().setMessage("Initial commit for user: $userName").call()
-
-                // 6. 配置远程仓库（使用主仓库地址）
+                // 3. 配置远程仓库（使用主仓库地址）
                 val repoSettings = RepositorySettingsManager.getCurrentSettings()
                 if (repoSettings.enabled && repoSettings.repositoryUrl.isNotBlank()) {
-                    userGit.remoteAdd().setName("origin").setUri(org.eclipse.jgit.transport.URIish(repoSettings.repositoryUrl)).call()
+                    // 检查是否已配置远程仓库
+                    val remotes = userGit.remoteList().call()
+                    val hasOrigin = remotes.any { it.name == "origin" }
 
-                    // 7. 设置上游分支为用户名
-                    userGit.checkout().setCreateBranch(true).setName(userName).call()
-
-                    // 8. 推送到远程仓库
-                    val pushCommand = userGit.push().setRemote("origin")
-                    if (repoSettings.username.isNotBlank() && repoSettings.password.isNotBlank()) {
-                        pushCommand.setCredentialsProvider(UsernamePasswordCredentialsProvider(repoSettings.username, repoSettings.password))
+                    if (!hasOrigin) {
+                        userGit.remoteAdd().setName("origin").setUri(org.eclipse.jgit.transport.URIish(repoSettings.repositoryUrl)).call()
                     }
-                    pushCommand.call()
 
-                    println("✅ 用户 $userName 的独立Git仓库已创建并推送到远程分支 $userName")
+                    // 4. 拉取远程分支信息
+                    val fetchCommand = userGit.fetch()
+                    if (repoSettings.username.isNotBlank() && repoSettings.password.isNotBlank()) {
+                        fetchCommand.setCredentialsProvider(UsernamePasswordCredentialsProvider(repoSettings.username, repoSettings.password))
+                    }
+                    fetchCommand.call()
+
+                    // 5. 检查分支是否已存在于远程
+                    val remoteBranches = userGit.branchList().setListMode(org.eclipse.jgit.api.ListBranchCommand.ListMode.REMOTE).call()
+                    val branchExists = remoteBranches.any { ref ->
+                        ref.name == "refs/remotes/origin/$userName" || ref.name == "origin/$userName"
+                    }
+
+                    if (branchExists) {
+                        // 分支已存在，拉取分支内容
+                        println("✅ 用户分支 $userName 已存在于远程，切换到该分支")
+                        userGit.checkout().setName(userName).call()
+                        userGit.pull()
+                            .setRemote("origin")
+                            .setRemoteBranchName(userName)
+                            .call()
+                    } else {
+                        // 分支不存在，需要创建
+                        // 6. 创建初始化数据文件
+                        if (!gitDir.exists()) {
+                            createInitialUserDataFiles(userLocalDir, userName)
+
+                            // 7. 添加所有文件到Git
+                            userGit.add().addFilepattern(".").call()
+
+                            // 8. 创建初始提交
+                            userGit.commit().setMessage("Initial commit for user: $userName").call()
+                        }
+
+                        // 9. 创建并切换到用户分支
+                        userGit.checkout().setCreateBranch(true).setName(userName).call()
+
+                        // 10. 推送到远程仓库
+                        val pushCommand = userGit.push().setRemote("origin")
+                        if (repoSettings.username.isNotBlank() && repoSettings.password.isNotBlank()) {
+                            pushCommand.setCredentialsProvider(UsernamePasswordCredentialsProvider(repoSettings.username, repoSettings.password))
+                        }
+                        pushCommand.call()
+
+                        println("✅ 用户 $userName 的独立Git仓库已创建并推送到远程分支 $userName")
+                    }
                 } else {
-                    println("⚠️ 仓库未配置，无法推送用户分支到远程")
+                    // 仓库未配置，只创建本地仓库
+                    if (!gitDir.exists()) {
+                        createInitialUserDataFiles(userLocalDir, userName)
+                        userGit.add().addFilepattern(".").call()
+                        userGit.commit().setMessage("Initial commit for user: $userName").call()
+                    }
+                    println("⚠️ 仓库未配置，仅创建本地用户仓库")
                 }
 
             } finally {

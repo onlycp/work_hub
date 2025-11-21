@@ -99,6 +99,13 @@ object AppInitializer {
         }
 
         try {
+            // 1. 首先同步所有分支，确保获取最新的远程分支信息
+            println("正在同步所有分支数据...")
+            val preLoginSyncResult = GitDataManager.syncAllBranches()
+            if (preLoginSyncResult.isFailure) {
+                println("⚠️ 分支同步失败，继续尝试登录: ${preLoginSyncResult.exceptionOrNull()?.message}")
+            }
+
             // 获取所有成员数据
             val mergedData = GitDataManager.getAllMergedData()
             val existingMembers = mergedData.members
