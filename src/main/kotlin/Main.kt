@@ -67,6 +67,13 @@ fun main() {
         System.setProperty("com.sun.management.jmxremote", "false")
         // 禁用 JGit 的 JMX 监控（WindowCache 的 MXBean）- 这是最关键的设置
         System.setProperty("org.eclipse.jgit.internal.storage.file.WindowCache.mxBeanDisabled", "true")
+
+        // 额外禁用 JMX 设置以增强兼容性
+        System.setProperty("com.sun.management.jmxremote.port", "")
+        System.setProperty("java.lang.management.ManagementFactory.createPlatformMXBean", "false")
+        System.setProperty("javax.management.builder.initial", "")
+        System.setProperty("javax.management.MBeanServerBuilder", "")
+
         Logger.log("✅ 系统属性设置完成")
     } catch (e: Exception) {
         // 忽略设置系统属性时的异常，不影响应用启动

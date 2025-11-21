@@ -187,10 +187,90 @@ object GitDataManager {
 
                 // 创建对应的homehub/repo目录
                 val memberDir = File(repoDir, branchName)
+
+                // 处理单个分支，包含容错和重试机制
+                val branchResult = pullBranchWithRetry(git, branchName, memberDir, maxRetries = 3)
+
+                if (branchResult.isSuccess) {
+                    // 记录成员名称（分支名对应成员姓名）
+                    if (branchName != "HEAD" && !branchName.contains("HEAD")) {
+                        memberNames.add(branchName)
+                    }
+                    println("✅ 成功处理分支: $branchName")
+                } else {
+                    println("⚠️ 分支 $branchName 处理失败: ${branchResult.exceptionOrNull()?.message}")
+                    // 继续处理其他分支，不中断整个流程
+                }
+            }
+
+            // 切换回主分支
+            try {
+                git.checkout().setName("main").call()
+            } catch (e: Exception) {
+                println("⚠️ 切换回主分支失败: ${e.message}")
+                // 尝试切换到master分支
+                try {
+                    git.checkout().setName("master").call()
+                } catch (e2: Exception) {
+                    println("⚠️ 切换回master分支也失败: ${e2.message}")
+                }
+            }
+
+            Result.success(memberNames)
+        } catch (e: Exception) {
+            println("❌ 拉取所有分支时出现严重错误: ${e.message}")
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * 带重试机制的单个分支拉取方法
+     */
+    private suspend fun pullBranchWithRetry(
+        git: Git,
+        branchName: String,
+        memberDir: File,
+        maxRetries: Int = 3
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        var lastException: Exception? = null
+        var success = false
+
+        for (attempt in 1..maxRetries) {
+            try {
+                println("正在处理分支 $branchName (尝试 $attempt/$maxRetries)")
+
+                // 如果是重试，先删除成员目录
+                if (attempt > 1) {
+                    println("重试前删除成员目录: ${memberDir.absolutePath}")
+                    try {
+                        memberDir.deleteRecursively()
+                        memberDir.mkdirs()
+                    } catch (e: Exception) {
+                        println("⚠️ 删除成员目录失败: ${e.message}")
+                    }
+                }
+
+                // 创建目录
                 memberDir.mkdirs()
 
                 // 切换到分支并拉取内容
-                git.checkout().setName(branchName).call()
+                try {
+                    git.checkout().setName(branchName).call()
+                } catch (e: Exception) {
+                    if (e.message?.contains("ref") == true || e.message?.contains("branch") == true) {
+                        // 如果是分支不存在的错误，尝试创建本地分支跟踪远程分支
+                        println("本地分支不存在，创建跟踪分支: $branchName")
+                        git.checkout()
+                            .setCreateBranch(true)
+                            .setName(branchName)
+                            .setStartPoint("origin/$branchName")
+                            .call()
+                    } else {
+                        throw e
+                    }
+                }
+
+                // 拉取内容
                 git.pull()
                     .setRemote("origin")
                     .setRemoteBranchName(branchName)
@@ -199,18 +279,47 @@ object GitDataManager {
                 // 将分支内容复制到homehub/repo目录
                 copyBranchContentToMemberDir(branchName, memberDir)
 
-                // 记录成员名称（分支名对应成员姓名）
-                if (branchName != "HEAD" && !branchName.contains("HEAD")) {
-                    memberNames.add(branchName)
+                // 成功完成
+                success = true
+                break
+
+            } catch (e: Exception) {
+                lastException = e
+                println("分支 $branchName 处理失败 (尝试 $attempt/$maxRetries): ${e.message}")
+
+                // 检查是否是 JMX 相关异常
+                if (e.javaClass.name.contains("MalformedObjectNameException") ||
+                    e.message?.contains("JMX") == true ||
+                    e.message?.contains("MBean") == true) {
+                    println("检测到 JMX 相关异常，尝试禁用更多 JMX 功能")
+
+                    // 额外禁用 JMX 设置
+                    try {
+                        System.setProperty("org.eclipse.jgit.internal.storage.file.WindowCache.mxBeanDisabled", "true")
+                        System.setProperty("com.sun.management.jmxremote", "false")
+                        System.setProperty("com.sun.management.jmxremote.port", "")
+                        System.setProperty("java.lang.management.ManagementFactory.createPlatformMXBean", "false")
+                        System.setProperty("javax.management.builder.initial", "")
+                        System.setProperty("javax.management.MBeanServerBuilder", "")
+                    } catch (jmxException: Exception) {
+                        println("⚠️ 额外 JMX 禁用失败: ${jmxException.message}")
+                    }
+                }
+
+                // 如果不是最后一次尝试，继续重试
+                if (attempt < maxRetries) {
+                    println("等待1秒后重试...")
+                    kotlinx.coroutines.delay(1000)
+                    continue
                 }
             }
+        }
 
-            // 切换回主分支
-            git.checkout().setName("main").call()
-
-            Result.success(memberNames)
-        } catch (e: Exception) {
-            Result.failure(e)
+        // 返回结果
+        if (success) {
+            Result.success(Unit)
+        } else {
+            Result.failure(lastException ?: Exception("未知错误"))
         }
     }
 
