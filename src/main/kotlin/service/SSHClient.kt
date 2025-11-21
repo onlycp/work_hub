@@ -57,7 +57,7 @@ class SSHClientManager(private val config: SSHConfig) {
             // 创建 SSH 客户端
             val client = SSHClient()
             client.addHostKeyVerifier(PromiscuousVerifier()) // 跳过主机密钥验证
-            client.loadKnownHosts()
+            // 注意：已设置PromiscuousVerifier跳过主机密钥验证，无需加载known_hosts文件
 
             // 连接到服务器
             client.connect(config.host, config.port)

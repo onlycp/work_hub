@@ -543,20 +543,24 @@ object GitDataManager {
             println("发现 ${userBranches.size} 个用户分支: ${userBranches.joinToString(", ")}")
 
             // 3. 为每个用户分支创建本地仓库（如果不存在）
-            for (userName in userBranches) {
+            for ((index, userName) in userBranches.withIndex()) {
+                println("正在处理用户分支 ${index + 1}/${userBranches.size}: $userName")
+
                 val userLocalDir = File(usersDir, userName)
                 val userGitDir = File(userLocalDir, ".git")
 
                 if (!userGitDir.exists()) {
                     // 创建用户分支的本地仓库
+                    println("  创建用户 $userName 的本地仓库...")
                     val createResult = createUserBranch(userName)
                     if (createResult.isFailure) {
-                        println("⚠️ 为用户 $userName 创建本地仓库失败: ${createResult.exceptionOrNull()?.message}")
+                        println("  ⚠️ 为用户 $userName 创建本地仓库失败: ${createResult.exceptionOrNull()?.message}")
                     } else {
-                        println("✅ 为用户 $userName 创建了本地仓库")
+                        println("  ✅ 为用户 $userName 创建了本地仓库")
                     }
                 } else {
                     // 如果已存在，同步数据
+                    println("  同步用户 $userName 的仓库...")
                     try {
                         val userGit = Git.open(userLocalDir)
                         try {
@@ -565,12 +569,12 @@ object GitDataManager {
                                 pullCommand.setCredentialsProvider(UsernamePasswordCredentialsProvider(repoSettings.username, repoSettings.password))
                             }
                             pullCommand.call()
-                            println("✅ 已同步用户 $userName 的仓库")
+                            println("  ✅ 已同步用户 $userName 的仓库")
                         } finally {
                             userGit.close()
                         }
                     } catch (e: Exception) {
-                        println("⚠️ 同步用户 $userName 仓库失败: ${e.message}")
+                        println("  ⚠️ 同步用户 $userName 仓库失败: ${e.message}")
                     }
                 }
             }

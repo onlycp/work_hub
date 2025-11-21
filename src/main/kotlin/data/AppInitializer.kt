@@ -95,11 +95,31 @@ object AppInitializer {
         }
 
         try {
-            // 1. 发现并同步所有远程用户分支
-            println("正在发现并同步远程用户分支...")
-            val discoverResult = GitDataManager.discoverAndSyncUserBranches()
-            if (discoverResult.isFailure) {
-                println("⚠️ 用户分支发现失败，继续本地检查: ${discoverResult.exceptionOrNull()?.message}")
+            // 1. 检查仓库配置并同步数据
+            val repoSettings = RepositorySettingsManager.getCurrentSettings()
+
+            if (repoSettings.enabled && repoSettings.repositoryUrl.isNotBlank()) {
+                // 仓库已配置，检查本地是否有用户数据
+                val currentMergedData = GitDataManager.getAllMergedData()
+
+                if (currentMergedData.members.isEmpty()) {
+                    // 本地没有用户数据，同步远程用户分支
+                    println("正在发现并同步远程用户分支...")
+                    val discoverResult = GitDataManager.discoverAndSyncUserBranches()
+                    if (discoverResult.isFailure) {
+                        println("⚠️ 用户分支发现失败，继续本地检查: ${discoverResult.exceptionOrNull()?.message}")
+                    }
+                } else {
+                    // 有用户数据，同步现有数据
+                    println("同步现有用户数据...")
+                    val syncResult = GitDataManager.syncAllBranches()
+                    if (syncResult.isFailure) {
+                        println("⚠️ 用户数据同步失败: ${syncResult.exceptionOrNull()?.message}")
+                    }
+                }
+            } else {
+                // 仓库未配置，只合并本地数据
+                GitDataManager.mergeAllUserData()
             }
 
             // 获取所有成员数据

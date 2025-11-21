@@ -33,6 +33,7 @@ fun RepositorySettingsDialog(
     var isTestingConnection by remember { mutableStateOf(false) }
     var testResult by remember { mutableStateOf<String?>(null) }
     var isSaving by remember { mutableStateOf(false) }
+    var savingStatus by remember { mutableStateOf<String?>(null) }
     var showPassword by remember { mutableStateOf(false) }
 
     val scope = rememberCoroutineScope()
@@ -209,6 +210,29 @@ fun RepositorySettingsDialog(
                             style = AppTypography.Caption,
                             color = AppColors.TextSecondary
                         )
+
+                        // 保存状态提示
+                        savingStatus?.let { status ->
+                            Spacer(modifier = Modifier.height(AppDimensions.SpaceM))
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                if (isSaving) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(16.dp),
+                                        strokeWidth = 2.dp,
+                                        color = AppColors.Primary
+                                    )
+                                    Spacer(modifier = Modifier.width(AppDimensions.SpaceS))
+                                }
+                                Text(
+                                    text = status,
+                                    style = AppTypography.BodySmall,
+                                    color = if (status.contains("失败") || status.contains("⚠️")) AppColors.Warning else AppColors.TextPrimary
+                                )
+                            }
+                        }
                 }
 
                 Divider(modifier = Modifier.padding(vertical = AppDimensions.SpaceM))
@@ -228,45 +252,38 @@ fun RepositorySettingsDialog(
                         onClick = {
                             scope.launch {
                                 isSaving = true
+                                savingStatus = "正在保存设置..."
                                 try {
                                     // 保存设置
                                     val updatedSettings = settings.copy(enabled = true)
                                     RepositorySettingsManager.updateSettings(updatedSettings)
 
-                                    // 执行初始化动作：拉取所有分支到对应目录
-                                    val initResult = GitDataManager.initializeRepository()
-                                    if (initResult.isSuccess) {
-                                        val cloneResult = GitDataManager.cloneOrUpdateRemoteRepository(
-                                            repositoryUrl = updatedSettings.repositoryUrl,
-                                            username = updatedSettings.username.takeIf { it.isNotBlank() },
-                                            password = updatedSettings.password.takeIf { it.isNotBlank() }
-                                        )
+                                    savingStatus = "正在连接远程仓库..."
+                                    // 执行初始化动作：发现并同步所有远程用户分支
+                                    val discoverResult = GitDataManager.discoverAndSyncUserBranches()
+                                    if (discoverResult.isSuccess) {
+                                        savingStatus = "✅ 仓库设置完成，已同步所有用户分支"
 
-                                        if (cloneResult.isSuccess) {
-                                            val pullResult = GitDataManager.pullAllBranchesToHomehubRepo()
-                                            if (pullResult.isSuccess) {
-                                                val memberNames = pullResult.getOrNull() ?: emptyList()
-                                                val createResult = GitDataManager.createMembersFromBranches(memberNames)
-                                                if (createResult.isSuccess) {
-                                                    // 同步数据以确保新成员显示在界面上
-                                                    GitDataManager.syncAllBranches()
-
-                                                    // 强制刷新所有管理器的数据
-                                                    val currentUser = CurrentUserManager.getCurrentUserId()
-                                                    if (currentUser.isNotEmpty()) {
-                                                        SSHConfigManager.setCurrentUser(currentUser)
-                                                        KeyManager.setCurrentUser(currentUser)
-                                                        CursorRuleManager.setCurrentUser(currentUser)
-                                                        MemberManager.setCurrentUser(currentUser)
-                                                    }
-                                                }
-                                            }
+                                        // 强制刷新所有管理器的数据（如果有已登录用户）
+                                        val currentUser = CurrentUserManager.getCurrentUserId()
+                                        if (currentUser.isNotEmpty()) {
+                                            SSHConfigManager.setCurrentUser(currentUser)
+                                            KeyManager.setCurrentUser(currentUser)
+                                            CursorRuleManager.setCurrentUser(currentUser)
+                                            MemberManager.setCurrentUser(currentUser)
+                                            ExpenseManager.setCurrentUser(currentUser)
                                         }
+                                    } else {
+                                        savingStatus = "⚠️ 设置已保存，但同步失败: ${discoverResult.exceptionOrNull()?.message}"
+                                        // 不影响设置保存，即使同步失败
                                     }
 
+                                    // 短暂延迟让用户看到结果
+                                    kotlinx.coroutines.delay(1500)
                                     onDismiss()
                                 } finally {
                                     isSaving = false
+                                    savingStatus = null
                                 }
                             }
                         },
