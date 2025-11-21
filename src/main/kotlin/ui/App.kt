@@ -8,6 +8,7 @@ import theme.*
 import ui.common.*
 import ui.ops.*
 import ui.SSHConfigDialog
+import utils.Logger
 import java.util.UUID
 
 /**
@@ -121,6 +122,7 @@ fun App(onLogout: () -> Unit = {}) {
         // 从SSHConfigManager获取最新配置
         val config = SSHConfigManager.getConfigById(configId)
         if (config != null) {
+            Logger.info("用户尝试连接到SSH主机: ${config.name} (${config.host}:${config.port})")
             scope.launch {
                 try {
                     statusMessage = "正在连接到 ${config.name}..."
@@ -139,18 +141,22 @@ fun App(onLogout: () -> Unit = {}) {
                         if (portRules.isNotEmpty()) {
                             sessionManager.loadPortForwardingRules(portRules)
                             statusMessage = "已连接到 ${config.name} (加载了 ${portRules.size} 个端口转发规则)"
+                            Logger.info("SSH连接成功: ${config.name}，加载了 ${portRules.size} 个端口转发规则")
                         } else {
                             statusMessage = "已连接到 ${config.name}"
+                            Logger.info("SSH连接成功: ${config.name}")
                         }
-                        
+
                         // 如果当前选中的主机是正在连接的主机，需要重新加载PortManager的配置
                         if (selectedHostTabId == configId) {
                             data.PortManager.setCurrentConfig(configId)
                         }
                     } else {
+                        Logger.error("SSH连接失败: ${config.name} - ${result.exceptionOrNull()?.message}")
                         statusMessage = "连接失败: ${result.exceptionOrNull()?.message}"
                     }
                 } catch (e: Exception) {
+                    Logger.error("SSH连接异常: ${config.name} - ${e.message}", e)
                     statusMessage = "连接失败: ${e.message}"
                 }
             }
@@ -160,6 +166,7 @@ fun App(onLogout: () -> Unit = {}) {
     val onSSHDisconnect = { configId: String ->
         val config = sshConfigs.find { it.id == configId }
         if (config != null) {
+            Logger.info("用户断开SSH连接: ${config.name}")
             // 停止所有端口转发
             SSHSessionManager.getSession(config.name)?.let { session ->
                 session.disconnect()
@@ -174,6 +181,7 @@ fun App(onLogout: () -> Unit = {}) {
             sshConnectionTimes = sshConnectionTimes - configId
             reconnectingStates = reconnectingStates - configId // 清除重连状态
             statusMessage = "已断开连接 ${config.name}"
+            Logger.info("SSH连接已断开: ${config.name}")
 
             // 如果启用了自动重连，启动重连逻辑
             if (autoReconnectEnabled[configId] == true) {
@@ -236,9 +244,9 @@ fun App(onLogout: () -> Unit = {}) {
         try {
             // 确保数据被正确加载
             sshConfigs = SSHConfigManager.getAllConfigs()
-            println("SSH配置加载完成，共 ${sshConfigs.size} 个配置")
+            Logger.info("SSH配置加载完成，共 ${sshConfigs.size} 个配置")
         } catch (e: Exception) {
-            println("SSH配置加载失败: ${e.message}")
+            Logger.error("SSH配置加载失败: ${e.message}", e)
             statusMessage = "数据加载失败: ${e.message}"
         }
     }
@@ -247,12 +255,18 @@ fun App(onLogout: () -> Unit = {}) {
         Column(modifier = Modifier.fillMaxSize()) {
             // 顶部工具栏
             TopToolbar(
-                onLogClick = { statusMessage = "打开日志查看器" },
+                onLogClick = {
+                    selectedModule = ModuleType.LOGS
+                    statusMessage = "切换到日志界面"
+                    utils.Logger.info("用户点击日志按钮，切换到日志界面")
+                },
                 onSettingsClick = {
                     selectedModule = ModuleType.SETTINGS
                     statusMessage = "切换到设置界面"
+                    utils.Logger.info("用户点击设置按钮，切换到设置界面")
                 },
                 onSyncClick = {
+                    Logger.info("用户点击同步按钮，开始数据同步")
                     scope.launch {
                         try {
                             statusMessage = "正在同步数据..."
@@ -260,19 +274,25 @@ fun App(onLogout: () -> Unit = {}) {
                             // 1. 推送当前用户的数据
                             val currentUser = CurrentUserManager.getCurrentUserId()
                             if (currentUser.isNotEmpty()) {
+                                Logger.info("正在推送用户 ${currentUser} 的数据")
                                 val pushResult = GitDataManager.pushCurrentUserData(currentUser)
                                 if (pushResult.isFailure) {
+                                    Logger.error("推送数据失败: ${pushResult.exceptionOrNull()?.message}")
                                     statusMessage = "推送数据失败: ${pushResult.exceptionOrNull()?.message}"
                                     return@launch
                                 }
+                                Logger.info("用户 ${currentUser} 数据推送成功")
                             }
 
                             // 2. 拉取其他分支的数据
+                            Logger.info("正在拉取其他分支的数据")
                             val syncResult = GitDataManager.syncAllBranches()
                             if (syncResult.isFailure) {
+                                Logger.error("拉取数据失败: ${syncResult.exceptionOrNull()?.message}")
                                 statusMessage = "拉取数据失败: ${syncResult.exceptionOrNull()?.message}"
                                 return@launch
                             }
+                            Logger.info("数据拉取成功")
 
                             // 3. 更新内存中的数据
                             SSHConfigManager.setCurrentUser(currentUser)
@@ -291,12 +311,15 @@ fun App(onLogout: () -> Unit = {}) {
                             ExpenseManager.setCurrentUser(currentUser)
 
                             statusMessage = "数据同步完成"
+                            Logger.info("数据同步完成，所有操作成功")
                         } catch (e: Exception) {
                             statusMessage = "同步失败: ${e.message}"
+                            Logger.error("数据同步失败: ${e.message}", e)
                         }
                     }
                 },
                 onExitClick = {
+                    Logger.info("用户点击退出按钮，开始退出程序")
                     scope.launch {
                         try {
                             statusMessage = "正在退出程序..."
@@ -316,9 +339,11 @@ fun App(onLogout: () -> Unit = {}) {
 
                             // 执行退出清理
                             performExitCleanup()
+                            Logger.info("应用程序退出成功")
 
                         } catch (e: Exception) {
                             statusMessage = "退出失败: ${e.message}"
+                            Logger.error("应用程序退出失败: ${e.message}", e)
                         }
                     }
                 }
@@ -332,6 +357,7 @@ fun App(onLogout: () -> Unit = {}) {
                     onModuleSelected = { module ->
                         selectedModule = module
                         statusMessage = "切换到 ${module.displayName}"
+                        Logger.info("用户切换到模块: ${module.displayName}")
                     },
                     currentUserName = CurrentUserManager.getCurrentUserName()
                 )
@@ -363,6 +389,8 @@ fun App(onLogout: () -> Unit = {}) {
                         showSSHConfigDialog = true
                     },
                     onSSHConfigDelete = { configId ->
+                        val configToDelete = sshConfigs.find { it.id == configId }
+                        Logger.info("用户删除SSH主机配置: ${configToDelete?.name ?: configId}")
                         scope.launch {
                             SSHConfigManager.deleteConfig(configId).fold(
                                 onSuccess = {
@@ -371,9 +399,11 @@ fun App(onLogout: () -> Unit = {}) {
                                         selectedSSHConfigId = null
                                     }
                                     statusMessage = "主机配置已删除"
+                                    Logger.info("SSH主机配置删除成功: ${configToDelete?.name ?: configId}")
                                 },
                                 onFailure = { error ->
                                     statusMessage = "删除失败: ${error.message}"
+                                    Logger.error("SSH主机配置删除失败: ${configToDelete?.name ?: configId} - ${error.message}")
                                 }
                             )
                         }
@@ -408,6 +438,7 @@ fun App(onLogout: () -> Unit = {}) {
                     onExecutingCommandRule = onExecutingCommandRule,
                     onAutoReconnectChanged = onAutoReconnectChanged,
                     onLogout = {
+                        Logger.info("用户执行退出登录操作")
                         // 退出登录逻辑
                         scope.launch {
                             try {
@@ -421,11 +452,13 @@ fun App(onLogout: () -> Unit = {}) {
                                 openedHostTabs = emptyList()
                                 selectedHostTabId = null
                                 statusMessage = "已退出登录"
+                                Logger.info("用户退出登录成功")
 
                                 // 调用外部的退出登录回调（跳转到登录页）
                                 onLogout()
                             } catch (e: Exception) {
                                 statusMessage = "退出登录失败: ${e.message}"
+                                Logger.error("用户退出登录失败: ${e.message}", e)
                             }
                         }
                     }
@@ -464,13 +497,16 @@ fun App(onLogout: () -> Unit = {}) {
                                             isShared = isShared,
                                             lastModified = System.currentTimeMillis()
                                         )
+                                        Logger.info("用户更新SSH主机配置: ${name} (${host}:${port})")
                                         SSHConfigManager.updateConfig(editingSSHConfigId!!, updatedConfig).fold(
                                             onSuccess = {
                                                 sshConfigs = SSHConfigManager.getAllConfigs()
                                                 statusMessage = "主机配置已更新"
+                                                Logger.info("SSH主机配置更新成功: ${name}")
                                             },
                                             onFailure = { error ->
                                                 statusMessage = "更新失败: ${error.message}"
+                                                Logger.error("SSH主机配置更新失败: ${name} - ${error.message}")
                                             }
                                         )
                                     }
@@ -489,13 +525,16 @@ fun App(onLogout: () -> Unit = {}) {
                                         createdBy = data.CurrentUserManager.getCurrentUserId(),
                                         isShared = isShared
                                     )
+                                    Logger.info("用户添加SSH主机配置: ${name} (${host}:${port})")
                                     SSHConfigManager.addConfig(newConfig).fold(
                                         onSuccess = {
                                             sshConfigs = SSHConfigManager.getAllConfigs()
                                             statusMessage = "主机配置已创建"
+                                            Logger.info("SSH主机配置添加成功: ${name}")
                                         },
                                         onFailure = { error ->
                                             statusMessage = "创建失败: ${error.message}"
+                                            Logger.error("SSH主机配置添加失败: ${name} - ${error.message}")
                                         }
                                     )
                                 }

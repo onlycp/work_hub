@@ -8,6 +8,7 @@ import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
@@ -87,6 +88,19 @@ fun TopToolbar(
                 Icon(
                     imageVector = Icons.Filled.Refresh,
                     contentDescription = "同步数据",
+                    tint = AppColors.TextSecondary,
+                    modifier = Modifier.size(AppDimensions.IconSizeM)
+                )
+            }
+
+            // 日志按钮
+            IconButton(
+                onClick = onLogClick,
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Description,
+                    contentDescription = "日志",
                     tint = AppColors.TextSecondary,
                     modifier = Modifier.size(AppDimensions.IconSizeM)
                 )

@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.AwtWindow
 import data.ExpenseData
 import data.ExpenseManager
+import data.ExpenseReportData
 import data.ExpenseStats
 import data.ExpenseType
 import data.MemberData
@@ -218,11 +219,12 @@ private fun ExpenseTabsHeader(
 private fun ExpenseRegistrationContent() {
     val scope = rememberCoroutineScope()
     val expenses by ExpenseManager.expenses.collectAsState()
+    val members by MemberManager.members.collectAsState()
     val currentUserId = CurrentUserManager.getCurrentUserId()
     val currentUserName = CurrentUserManager.getCurrentUserName()
 
     // 查询条件状态
-    var searchUserName by remember { mutableStateOf("") }
+    var searchMember by remember { mutableStateOf<MemberData?>(null) }
     var selectedType by remember { mutableStateOf<ExpenseType?>(null) }
     var startDate by remember { mutableStateOf<Long?>(null) }
     var endDate by remember { mutableStateOf<Long?>(null) }
@@ -241,9 +243,9 @@ private fun ExpenseRegistrationContent() {
     val dateTimeFormatter = remember { SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()) }
 
     // 根据查询条件过滤数据
-    val filteredExpenses = remember(expenses, searchUserName, selectedType, startDate, endDate) {
+    val filteredExpenses = remember(expenses, searchMember, selectedType, startDate, endDate) {
         ExpenseManager.queryExpenses(
-            userName = searchUserName.takeIf { it.isNotBlank() },
+            userName = searchMember?.name?.takeIf { it.isNotBlank() },
             startDate = startDate,
             endDate = endDate,
             type = selectedType
@@ -263,14 +265,13 @@ private fun ExpenseRegistrationContent() {
     }
 
     // 统计数据
-    val (personalStats, teamStats) = remember(filteredExpenses, currentUserId, searchUserName) {
-        ExpenseManager.getStatsWithFilter(searchUserName, startDate, endDate, selectedType)
+    val (personalStats, teamStats) = remember(filteredExpenses, currentUserId, searchMember) {
+        ExpenseManager.getStatsWithFilter(searchMember?.name ?: "", startDate, endDate, selectedType)
     }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(AppDimensions.PaddingScreen)
     ) {
         // 上部分：统计面板
         ExpenseStatsPanel(personalStats = personalStats, teamStats = teamStats)
@@ -279,8 +280,9 @@ private fun ExpenseRegistrationContent() {
 
         // 查询条件和操作栏
         ExpenseQueryAndActionBar(
-            searchUserName = searchUserName,
-            onSearchUserNameChange = { searchUserName = it },
+            members = members,
+            searchMember = searchMember,
+            onSearchMemberChange = { searchMember = it },
             selectedType = selectedType,
             onTypeSelected = { selectedType = it },
             startDate = startDate,
@@ -507,8 +509,9 @@ private fun StatsCard(
  */
 @Composable
 private fun ExpenseQueryAndActionBar(
-    searchUserName: String,
-    onSearchUserNameChange: (String) -> Unit,
+    members: List<MemberData>,
+    searchMember: MemberData?,
+    onSearchMemberChange: (MemberData?) -> Unit,
     selectedType: ExpenseType?,
     onTypeSelected: (ExpenseType?) -> Unit,
     startDate: Long?,
@@ -517,21 +520,43 @@ private fun ExpenseQueryAndActionBar(
     onAddExpense: () -> Unit
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
-        // 第一行：标题和添加按钮
+
+        // 第二行：查询条件
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(AppDimensions.SpaceM)
         ) {
-            Text(
-                text = "报销记录",
-                style = AppTypography.BodyLarge,
-                color = AppColors.TextPrimary,
-                fontWeight = FontWeight.Medium
+            // 人员搜索
+            MemberDropdown(
+                members = members,
+                selectedMember = searchMember,
+                onMemberSelected = onSearchMemberChange,
+                label = "搜索报销人员",
+                modifier = Modifier
+                    .weight(1f)
+                    .height(AppDimensions.InputHeightSmall)
             )
 
+            // 类型选择
+            ExpenseTypeDropdown(
+                selectedType = selectedType,
+                onTypeSelected = onTypeSelected,
+                modifier = Modifier.width(140.dp).height(AppDimensions.InputHeightSmall)
+            )
+
+            // 日期范围选择
+            DateRangeSelector(
+                startDate = startDate,
+                endDate = endDate,
+                onDateRangeSelected = onDateRangeSelected,
+                modifier = Modifier.width(200.dp)
+            )
+
+            // 添加报销按钮
             Button(
                 onClick = onAddExpense,
+                modifier = Modifier.height(AppDimensions.InputHeightSmall),
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
             ) {
                 Icon(
@@ -542,57 +567,6 @@ private fun ExpenseQueryAndActionBar(
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("添加报销", style = AppTypography.Caption)
             }
-        }
-
-        Spacer(modifier = Modifier.height(AppDimensions.SpaceS))
-
-        // 第二行：查询条件
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(AppDimensions.SpaceM)
-        ) {
-            // 姓名搜索
-            OutlinedTextField(
-                value = searchUserName,
-                onValueChange = onSearchUserNameChange,
-                placeholder = {
-                    Text(
-                        text = "搜索报销人员",
-                        style = AppTypography.BodySmall,
-                        color = AppColors.TextDisabled
-                    )
-                },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.Search,
-                        contentDescription = "搜索",
-                        tint = AppColors.TextDisabled,
-                        modifier = Modifier.size(16.dp)
-                    )
-                },
-                modifier = Modifier
-                    .weight(1f)
-                    .height(AppDimensions.InputHeightSmall),
-                textStyle = TextStyle(fontSize = 14.sp),
-                singleLine = true,
-                shape = RoundedCornerShape(AppDimensions.CornerSmall)
-            )
-
-            // 类型选择
-            ExpenseTypeDropdown(
-                selectedType = selectedType,
-                onTypeSelected = onTypeSelected,
-                modifier = Modifier.width(140.dp)
-            )
-
-            // 日期范围选择
-            DateRangeSelector(
-                startDate = startDate,
-                endDate = endDate,
-                onDateRangeSelected = onDateRangeSelected,
-                modifier = Modifier.width(200.dp)
-            )
         }
     }
 }
@@ -690,7 +664,98 @@ private fun DateRangeSelector(
             expanded = expanded,
             onDismissRequest = { expanded = false }
         ) {
-            // 本月快捷选择
+            val calendar = Calendar.getInstance()
+
+            // 今天
+            DropdownMenuItem(onClick = {
+                val today = Calendar.getInstance()
+                today.set(Calendar.HOUR_OF_DAY, 0)
+                today.set(Calendar.MINUTE, 0)
+                today.set(Calendar.SECOND, 0)
+                today.set(Calendar.MILLISECOND, 0)
+                val start = today.timeInMillis
+
+                today.set(Calendar.HOUR_OF_DAY, 23)
+                today.set(Calendar.MINUTE, 59)
+                today.set(Calendar.SECOND, 59)
+                today.set(Calendar.MILLISECOND, 999)
+                val end = today.timeInMillis
+
+                onDateRangeSelected(start, end)
+                expanded = false
+            }) {
+                Text("今天", style = AppTypography.BodySmall)
+            }
+
+            // 昨天
+            DropdownMenuItem(onClick = {
+                val yesterday = Calendar.getInstance()
+                yesterday.add(Calendar.DAY_OF_MONTH, -1)
+                yesterday.set(Calendar.HOUR_OF_DAY, 0)
+                yesterday.set(Calendar.MINUTE, 0)
+                yesterday.set(Calendar.SECOND, 0)
+                yesterday.set(Calendar.MILLISECOND, 0)
+                val start = yesterday.timeInMillis
+
+                yesterday.set(Calendar.HOUR_OF_DAY, 23)
+                yesterday.set(Calendar.MINUTE, 59)
+                yesterday.set(Calendar.SECOND, 59)
+                yesterday.set(Calendar.MILLISECOND, 999)
+                val end = yesterday.timeInMillis
+
+                onDateRangeSelected(start, end)
+                expanded = false
+            }) {
+                Text("昨天", style = AppTypography.BodySmall)
+            }
+
+            // 最近7天
+            DropdownMenuItem(onClick = {
+                val endCalendar = Calendar.getInstance()
+                endCalendar.set(Calendar.HOUR_OF_DAY, 23)
+                endCalendar.set(Calendar.MINUTE, 59)
+                endCalendar.set(Calendar.SECOND, 59)
+                endCalendar.set(Calendar.MILLISECOND, 999)
+                val end = endCalendar.timeInMillis
+
+                val startCalendar = Calendar.getInstance()
+                startCalendar.add(Calendar.DAY_OF_MONTH, -6)
+                startCalendar.set(Calendar.HOUR_OF_DAY, 0)
+                startCalendar.set(Calendar.MINUTE, 0)
+                startCalendar.set(Calendar.SECOND, 0)
+                startCalendar.set(Calendar.MILLISECOND, 0)
+                val start = startCalendar.timeInMillis
+
+                onDateRangeSelected(start, end)
+                expanded = false
+            }) {
+                Text("最近7天", style = AppTypography.BodySmall)
+            }
+
+            // 最近30天
+            DropdownMenuItem(onClick = {
+                val endCalendar = Calendar.getInstance()
+                endCalendar.set(Calendar.HOUR_OF_DAY, 23)
+                endCalendar.set(Calendar.MINUTE, 59)
+                endCalendar.set(Calendar.SECOND, 59)
+                endCalendar.set(Calendar.MILLISECOND, 999)
+                val end = endCalendar.timeInMillis
+
+                val startCalendar = Calendar.getInstance()
+                startCalendar.add(Calendar.DAY_OF_MONTH, -29)
+                startCalendar.set(Calendar.HOUR_OF_DAY, 0)
+                startCalendar.set(Calendar.MINUTE, 0)
+                startCalendar.set(Calendar.SECOND, 0)
+                startCalendar.set(Calendar.MILLISECOND, 0)
+                val start = startCalendar.timeInMillis
+
+                onDateRangeSelected(start, end)
+                expanded = false
+            }) {
+                Text("最近30天", style = AppTypography.BodySmall)
+            }
+
+            // 本月
             DropdownMenuItem(onClick = {
                 val calendar = Calendar.getInstance()
                 calendar.set(Calendar.DAY_OF_MONTH, 1)
@@ -711,6 +776,30 @@ private fun DateRangeSelector(
                 expanded = false
             }) {
                 Text("本月", style = AppTypography.BodySmall)
+            }
+
+            // 上月
+            DropdownMenuItem(onClick = {
+                val calendar = Calendar.getInstance()
+                calendar.add(Calendar.MONTH, -1)
+                calendar.set(Calendar.DAY_OF_MONTH, 1)
+                calendar.set(Calendar.HOUR_OF_DAY, 0)
+                calendar.set(Calendar.MINUTE, 0)
+                calendar.set(Calendar.SECOND, 0)
+                calendar.set(Calendar.MILLISECOND, 0)
+                val lastMonthStart = calendar.timeInMillis
+
+                calendar.set(Calendar.DAY_OF_MONTH, calendar.getActualMaximum(Calendar.DAY_OF_MONTH))
+                calendar.set(Calendar.HOUR_OF_DAY, 23)
+                calendar.set(Calendar.MINUTE, 59)
+                calendar.set(Calendar.SECOND, 59)
+                calendar.set(Calendar.MILLISECOND, 999)
+                val lastMonthEnd = calendar.timeInMillis
+
+                onDateRangeSelected(lastMonthStart, lastMonthEnd)
+                expanded = false
+            }) {
+                Text("上月", style = AppTypography.BodySmall)
             }
 
             // 清除选择
@@ -1267,6 +1356,13 @@ private fun MemberDropdown(
             expanded = expanded,
             onDismissRequest = { expanded = false }
         ) {
+            // 清除选择选项
+            DropdownMenuItem(onClick = {
+                onMemberSelected(null)
+                expanded = false
+            }) {
+                Text("全部成员", style = AppTypography.BodySmall)
+            }
             members.forEach { member ->
                 DropdownMenuItem(
                     onClick = {
@@ -1328,34 +1424,525 @@ private fun FileDialog(
 }
 
 /**
+ * 报表统计面板组件
+ */
+@Composable
+private fun ExpenseReportStatsPanel(stats: ExpenseStats) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = 4.dp,
+        shape = RoundedCornerShape(AppDimensions.RadiusM)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(AppDimensions.SpaceM),
+            horizontalAlignment = Alignment.Start
+        ) {
+            Text(
+                text = "报表统计",
+                style = AppTypography.BodySmall,
+                color = AppColors.TextSecondary,
+                fontWeight = FontWeight.Medium
+            )
+
+            Spacer(modifier = Modifier.height(AppDimensions.SpaceXS))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(AppDimensions.SpaceL),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // 总记录数
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(AppDimensions.SpaceXS)
+                ) {
+                    Text(
+                        text = "记录数:",
+                        style = AppTypography.Caption,
+                        color = AppColors.TextDisabled
+                    )
+                    Text(
+                        text = stats.count.toString(),
+                        style = AppTypography.BodyMedium,
+                        color = AppColors.Primary,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                // 总金额
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(AppDimensions.SpaceXS)
+                ) {
+                    Text(
+                        text = "总金额:",
+                        style = AppTypography.Caption,
+                        color = AppColors.TextDisabled
+                    )
+                    Text(
+                        text = "¥${String.format("%.2f", stats.totalAmount)}",
+                        style = AppTypography.BodyMedium,
+                        color = AppColors.Success,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 报表查询条件栏组件
+ */
+@Composable
+private fun ExpenseReportQueryBar(
+    members: List<MemberData>,
+    availableMonths: List<String>,
+    searchMember: MemberData?,
+    onSearchMemberChange: (MemberData?) -> Unit,
+    selectedMonth: String?,
+    onMonthSelected: (String?) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(AppDimensions.SpaceM)
+    ) {
+        // 成员筛选
+        MemberDropdown(
+            members = members,
+            selectedMember = searchMember,
+            onMemberSelected = onSearchMemberChange,
+            label = "筛选成员",
+            modifier = Modifier
+                .weight(1f)
+                .height(AppDimensions.InputHeightSmall)
+        )
+
+        // 月份筛选
+        MonthDropdown(
+            availableMonths = availableMonths,
+            selectedMonth = selectedMonth,
+            onMonthSelected = onMonthSelected,
+            modifier = Modifier
+                .weight(1f)
+                .height(AppDimensions.InputHeightSmall)
+        )
+    }
+}
+
+/**
+ * 月份下拉选择组件
+ * 支持选择具体月份或全部月份
+ */
+@Composable
+private fun MonthDropdown(
+    availableMonths: List<String>,
+    selectedMonth: String?,
+    onMonthSelected: (String?) -> Unit,
+    modifier: Modifier = Modifier,
+    label: String = "选择月份"
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Box(modifier = modifier) {
+        OutlinedButton(
+            onClick = { expanded = true },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(AppDimensions.CornerSmall)
+        ) {
+            Text(
+                text = selectedMonth?.let { "${it}月" } ?: label,
+                style = AppTypography.BodySmall,
+                color = if (selectedMonth != null) AppColors.TextPrimary else AppColors.TextDisabled
+            )
+            Spacer(modifier = Modifier.weight(1f))
+            Icon(
+                imageVector = if (expanded) Icons.Default.ArrowDropUp else Icons.Default.ArrowDropDown,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp)
+            )
+        }
+
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            // 全部月份选项
+            DropdownMenuItem(onClick = {
+                onMonthSelected(null)
+                expanded = false
+            }) {
+                Text("全部月份", style = AppTypography.BodySmall)
+            }
+
+            // 分隔线
+            Divider()
+
+            // 具体月份选项
+            availableMonths.forEach { month ->
+                DropdownMenuItem(onClick = {
+                    onMonthSelected(month)
+                    expanded = false
+                }) {
+                    Text("${month}月", style = AppTypography.BodySmall)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 报表表格组件
+ */
+@Composable
+private fun ExpenseReportTable(
+    reportData: List<ExpenseReportData>,
+    totalCount: Int,
+    currentPage: Int,
+    totalPages: Int,
+    pageSize: Int,
+    onPageChange: (Int) -> Unit,
+    monthYearFormatter: SimpleDateFormat
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = 4.dp,
+        shape = RoundedCornerShape(AppDimensions.RadiusL)
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            // 表头
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = AppColors.BackgroundSecondary,
+                elevation = 2.dp
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = AppDimensions.PaddingM, vertical = AppDimensions.SpaceS),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "成员",
+                        modifier = Modifier.weight(1f),
+                        style = AppTypography.BodySmall,
+                        fontWeight = FontWeight.Bold,
+                        color = AppColors.TextPrimary
+                    )
+                    Text(
+                        text = "月份",
+                        modifier = Modifier.weight(0.8f),
+                        style = AppTypography.BodySmall,
+                        fontWeight = FontWeight.Bold,
+                        color = AppColors.TextPrimary
+                    )
+                    Text(
+                        text = "记录数",
+                        modifier = Modifier.weight(0.6f),
+                        style = AppTypography.BodySmall,
+                        fontWeight = FontWeight.Bold,
+                        color = AppColors.TextPrimary
+                    )
+                    Text(
+                        text = "总额",
+                        modifier = Modifier.weight(0.8f),
+                        style = AppTypography.BodySmall,
+                        fontWeight = FontWeight.Bold,
+                        color = AppColors.TextPrimary
+                    )
+                    Text(
+                        text = "类型明细",
+                        modifier = Modifier.weight(2f),
+                        style = AppTypography.BodySmall,
+                        fontWeight = FontWeight.Bold,
+                        color = AppColors.TextPrimary
+                    )
+                }
+            }
+
+            // 表格内容
+            if (reportData.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .padding(AppDimensions.PaddingL),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            imageVector = Icons.Default.Assessment,
+                            contentDescription = null,
+                            modifier = Modifier.size(64.dp),
+                            tint = AppColors.TextDisabled
+                        )
+                        Spacer(modifier = Modifier.height(AppDimensions.SpaceM))
+                        Text(
+                            text = "暂无报表数据",
+                            style = AppTypography.BodyLarge,
+                            color = AppColors.TextSecondary
+                        )
+                        Spacer(modifier = Modifier.height(AppDimensions.SpaceS))
+                        Text(
+                            text = "请添加报销记录后查看报表",
+                            style = AppTypography.Caption,
+                            color = AppColors.TextDisabled
+                        )
+                    }
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                ) {
+                    items(reportData) { reportItem ->
+                        ExpenseReportTableRow(
+                            reportData = reportItem,
+                            monthYearFormatter = monthYearFormatter
+                        )
+                    }
+                }
+            }
+
+            // 分页控件
+            if (totalPages > 1) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = AppColors.BackgroundSecondary,
+                    elevation = 2.dp
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = AppDimensions.PaddingM, vertical = AppDimensions.SpaceS),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "第 $currentPage 页，共 $totalPages 页 (共 $totalCount 条记录)",
+                            style = AppTypography.Caption,
+                            color = AppColors.TextSecondary
+                        )
+
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(AppDimensions.SpaceS),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            IconButton(
+                                onClick = { if (currentPage > 1) onPageChange(currentPage - 1) },
+                                enabled = currentPage > 1,
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.ChevronLeft,
+                                    contentDescription = "上一页",
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+
+                            Text(
+                                text = "$currentPage",
+                                style = AppTypography.Caption,
+                                color = AppColors.Primary,
+                                fontWeight = FontWeight.Medium
+                            )
+
+                            IconButton(
+                                onClick = { if (currentPage < totalPages) onPageChange(currentPage + 1) },
+                                enabled = currentPage < totalPages,
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.ChevronRight,
+                                    contentDescription = "下一页",
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 报表表格行组件
+ */
+@Composable
+private fun ExpenseReportTableRow(
+    reportData: ExpenseReportData,
+    monthYearFormatter: SimpleDateFormat
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = Color.Transparent
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = AppDimensions.PaddingM, vertical = AppDimensions.SpaceS),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // 成员
+            Text(
+                text = reportData.memberName,
+                modifier = Modifier.weight(1f),
+                style = AppTypography.BodySmall,
+                color = AppColors.TextPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            // 月份
+            Text(
+                text = "${reportData.month}月",
+                modifier = Modifier.weight(0.8f),
+                style = AppTypography.BodySmall,
+                color = AppColors.TextPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            // 记录数
+            Text(
+                text = reportData.recordCount.toString(),
+                modifier = Modifier.weight(0.6f),
+                style = AppTypography.BodySmall,
+                color = AppColors.TextSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            // 总额
+            Text(
+                text = "¥${String.format("%.2f", reportData.totalAmount)}",
+                modifier = Modifier.weight(0.8f),
+                style = AppTypography.BodySmall,
+                color = AppColors.Success,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            // 类型明细
+            Column(modifier = Modifier.weight(2f)) {
+                reportData.typeAmounts.entries
+                    .sortedByDescending { it.value } // 按金额降序排序
+                    .take(3) // 只显示前3个类型
+                    .forEach { (type, amount) ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = type.displayName,
+                                style = AppTypography.Caption,
+                                color = AppColors.TextSecondary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text(
+                                text = "¥${String.format("%.2f", amount)}",
+                                style = AppTypography.Caption,
+                                color = AppColors.Success,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+                if (reportData.typeAmounts.size > 3) {
+                    Text(
+                        text = "...等${reportData.typeAmounts.size}个类型",
+                        style = AppTypography.Caption,
+                        color = AppColors.TextDisabled
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
  * 报销报表内容
  */
 @Composable
 private fun ExpenseReportContent() {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(AppDimensions.PaddingScreen),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Icon(
-            imageVector = Icons.Default.Assessment,
-            contentDescription = null,
-            tint = AppColors.TextSecondary,
-            modifier = Modifier.size(64.dp)
+    val scope = rememberCoroutineScope()
+    val members by MemberManager.members.collectAsState()
+    val availableMonths = remember { ExpenseManager.getAvailableMonths() }
+
+    // 查询条件状态
+    var searchMember by remember { mutableStateOf<MemberData?>(null) }
+    var selectedMonth by remember { mutableStateOf<String?>(null) }
+
+    // 分页状态
+    val pageSize = 10
+    var currentPage by remember { mutableStateOf(1) }
+
+    // 日期格式化器
+    val dateFormatter = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()) }
+    val monthYearFormatter = remember { SimpleDateFormat("yyyy年MM月", Locale.getDefault()) }
+
+    // 根据查询条件生成报表数据
+    val reportData = remember(searchMember, selectedMonth) {
+        ExpenseManager.generateExpenseReport(
+            memberNameFilter = searchMember?.name,
+            monthFilter = selectedMonth
         )
-        Spacer(modifier = Modifier.height(AppDimensions.SpaceL))
-        Text(
-            text = "报销报表",
-            style = AppTypography.TitleLarge,
-            color = AppColors.TextPrimary
+    }
+
+    // 分页数据
+    val totalPages = ceil(reportData.size.toDouble() / pageSize).toInt()
+    val paginatedReportData = remember(reportData, currentPage) {
+        val startIndex = (currentPage - 1) * pageSize
+        val endIndex = minOf(startIndex + pageSize, reportData.size)
+        if (startIndex < reportData.size) {
+            reportData.subList(startIndex, endIndex)
+        } else {
+            emptyList()
+        }
+    }
+
+    // 总统计数据
+    val totalStats = remember(reportData) {
+        ExpenseStats(
+            count = reportData.sumOf { it.recordCount },
+            totalAmount = reportData.sumOf { it.totalAmount }
         )
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        // 报表统计面板
+        ExpenseReportStatsPanel(stats = totalStats)
+
         Spacer(modifier = Modifier.height(AppDimensions.SpaceM))
-        Text(
-            text = "查看报销统计和报表信息",
-            style = AppTypography.BodyMedium,
-            color = AppColors.TextSecondary
+
+        // 查询条件栏
+        ExpenseReportQueryBar(
+            members = members,
+            availableMonths = availableMonths,
+            searchMember = searchMember,
+            onSearchMemberChange = { searchMember = it },
+            selectedMonth = selectedMonth,
+            onMonthSelected = { selectedMonth = it }
+        )
+
+        Spacer(modifier = Modifier.height(AppDimensions.SpaceM))
+
+        // 报表表格
+        ExpenseReportTable(
+            reportData = paginatedReportData,
+            totalCount = reportData.size,
+            currentPage = currentPage,
+            totalPages = totalPages,
+            pageSize = pageSize,
+            onPageChange = { currentPage = it },
+            monthYearFormatter = monthYearFormatter
         )
     }
 }

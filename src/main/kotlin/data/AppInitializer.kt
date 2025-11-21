@@ -1,6 +1,7 @@
 package data
 
 import kotlinx.coroutines.*
+import utils.Logger
 
 /**
  * 应用初始化器
@@ -15,29 +16,29 @@ object AppInitializer {
      */
     suspend fun initialize(): Result<Unit> = withContext(Dispatchers.IO) {
         try {
-            println("开始应用初始化...")
+            Logger.info("开始应用初始化")
 
             // 1. 初始化Git仓库
             val gitResult = GitDataManager.initializeRepository()
             if (gitResult.isFailure) {
-                println("Git仓库初始化失败: ${gitResult.exceptionOrNull()?.message}")
+                Logger.error("Git仓库初始化失败: ${gitResult.exceptionOrNull()?.message}")
                 // Git初始化失败不影响应用启动，继续
             }
 
             // 2. 验证远程仓库配置
             val repoValidationResult = validateRepositorySettings()
             if (repoValidationResult.isFailure) {
-                println("远程仓库配置验证失败: ${repoValidationResult.exceptionOrNull()?.message}")
+                Logger.error("远程仓库配置验证失败: ${repoValidationResult.exceptionOrNull()?.message}")
                 // 配置验证失败不影响应用启动，继续
             }
 
             // 3. 初始化本地数据合并（不需要同步远程，因为此时还没有用户）
             GitDataManager.mergeAllUserData()
 
-            println("应用初始化完成")
+            Logger.info("应用初始化完成")
             Result.success(Unit)
         } catch (e: Exception) {
-            println("应用初始化失败: ${e.message}")
+            Logger.error("应用初始化失败: ${e.message}", e)
             Result.failure(e)
         }
     }
@@ -51,11 +52,11 @@ object AppInitializer {
             val repoSettings = RepositorySettingsManager.getCurrentSettings()
 
             if (!repoSettings.enabled || repoSettings.repositoryUrl.isBlank()) {
-                println("仓库同步未启用或未配置仓库地址")
+                Logger.info("仓库同步未启用或未配置仓库地址")
                 return@withContext Result.success(Unit)
             }
 
-            println("验证远程仓库配置...")
+            Logger.info("验证远程仓库配置")
 
             // 测试仓库连接
             val testResult = GitDataManager.testRepositoryConnection(
@@ -68,9 +69,10 @@ object AppInitializer {
                 return@withContext Result.failure(Exception("仓库连接测试失败: ${testResult.exceptionOrNull()?.message}"))
             }
 
-            println("仓库配置验证成功: ${testResult.getOrNull()}")
+            Logger.info("仓库配置验证成功: ${testResult.getOrNull()}")
             Result.success(Unit)
         } catch (e: Exception) {
+            Logger.error("仓库配置验证失败: ${e.message}", e)
             Result.failure(e)
         }
     }

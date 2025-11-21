@@ -8,6 +8,7 @@ import net.schmizz.sshj.SSHClient
 import net.schmizz.sshj.connection.channel.direct.Session
 import net.schmizz.sshj.transport.verification.PromiscuousVerifier
 import net.schmizz.sshj.userauth.keyprovider.KeyProvider
+import utils.Logger
 import java.io.File
 import java.nio.file.Files
 import java.util.concurrent.TimeUnit
@@ -176,12 +177,12 @@ class SSHClientManager(private val config: SSHConfig) {
 
             _state.value = SSHSessionState.Connected
 
-            println("✓ SSH连接成功: ${config.name}")
+            Logger.info("SSH连接成功: ${config.name}")
             Result.success(Unit)
         } catch (e: Exception) {
             val errorMessage = "连接失败: ${e.message}"
             _state.value = SSHSessionState.Error(errorMessage)
-            println("✗ $errorMessage")
+            Logger.error("SSH连接失败: ${config.name} - $errorMessage")
             e.printStackTrace()
             Result.failure(e)
         }
@@ -237,9 +238,9 @@ class SSHClientManager(private val config: SSHConfig) {
             sshClient = null
             session = null
             _state.value = SSHSessionState.Disconnected
-            println("✓ SSH连接已断开: ${config.name}")
+            Logger.info("SSH连接已断开: ${config.name}")
         } catch (e: Exception) {
-            println("断开连接时出错: ${e.message}")
+            Logger.error("SSH断开连接时出错: ${config.name} - ${e.message}", e)
         }
     }
 

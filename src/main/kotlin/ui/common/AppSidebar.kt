@@ -44,7 +44,7 @@ fun Sidebar(
         ) {
             // 模块按钮列表
             ModuleType.entries.forEach { module ->
-                if (module != ModuleType.PROFILE && module != ModuleType.SETTINGS) { // 个人信息按钮在底部单独处理，设置按钮已在顶部工具栏
+                if (module != ModuleType.PROFILE && module != ModuleType.SETTINGS && module != ModuleType.LOGS) { // 个人信息按钮在底部单独处理，设置按钮已在顶部工具栏，日志按钮仅在顶部工具栏显示
                     ModuleButton(
                         module = module,
                         isSelected = module == selectedModule,

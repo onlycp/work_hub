@@ -226,6 +226,72 @@ object ExpenseManager {
     fun getCurrentUserName(): String {
         return CurrentUserManager.getCurrentUserName()
     }
+
+    /**
+     * 生成报销报表数据（按成员+月份分组）
+     */
+    fun generateExpenseReport(
+        memberNameFilter: String? = null,
+        monthFilter: String? = null,
+        startDate: Long? = null,
+        endDate: Long? = null
+    ): List<ExpenseReportData> {
+        val allExpenses = getAllExpenses()
+
+        // 先按条件过滤
+        val filteredExpenses = allExpenses.filter { expense ->
+            (memberNameFilter.isNullOrBlank() || expense.userName.contains(memberNameFilter, ignoreCase = true)) &&
+            (monthFilter.isNullOrBlank() || getMonthString(expense.date) == monthFilter) &&
+            (startDate == null || expense.date >= startDate) &&
+            (endDate == null || expense.date <= endDate)
+        }
+
+        // 按成员和月份分组
+        val groupedData = filteredExpenses.groupBy { expense ->
+            Pair(expense.userName, getMonthString(expense.date))
+        }
+
+        // 生成报表数据
+        return groupedData.map { (key, expenses) ->
+            val (memberName, month) = key
+
+            // 计算各类型金额统计
+            val typeAmounts = ExpenseType.values().associateWith { type ->
+                expenses.filter { it.type == type }.sumOf { it.amount }
+            }.filterValues { it > 0.0 } // 只保留有金额的类型
+
+            ExpenseReportData(
+                memberName = memberName,
+                month = month,
+                totalAmount = expenses.sumOf { it.amount },
+                typeAmounts = typeAmounts,
+                recordCount = expenses.size
+            )
+        }.sortedWith(
+            compareBy<ExpenseReportData> { it.month }.thenBy { it.memberName }
+        )
+    }
+
+    /**
+     * 获取日期的月份字符串（yyyy-MM格式）
+     */
+    private fun getMonthString(timestamp: Long): String {
+        val calendar = Calendar.getInstance()
+        calendar.timeInMillis = timestamp
+        return String.format("%04d-%02d",
+            calendar.get(Calendar.YEAR),
+            calendar.get(Calendar.MONTH) + 1) // MONTH是从0开始的
+    }
+
+    /**
+     * 获取所有可用的月份列表（用于筛选）
+     */
+    fun getAvailableMonths(): List<String> {
+        val allExpenses = getAllExpenses()
+        return allExpenses.map { getMonthString(it.date) }
+            .distinct()
+            .sortedDescending() // 最新的月份在前
+    }
 }
 
 /**
@@ -234,4 +300,15 @@ object ExpenseManager {
 data class ExpenseStats(
     val count: Int,
     val totalAmount: Double
+)
+
+/**
+ * 报销报表数据类（按成员+月份分组）
+ */
+data class ExpenseReportData(
+    val memberName: String,                    // 成员姓名
+    val month: String,                         // 月份，格式：yyyy-MM
+    val totalAmount: Double,                   // 总额
+    val typeAmounts: Map<ExpenseType, Double>, // 各类型金额统计
+    val recordCount: Int                       // 记录总数
 )

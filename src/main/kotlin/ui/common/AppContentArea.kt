@@ -11,6 +11,7 @@ import ui.cursor.*
 import ui.expense.*
 import ui.home.*
 import ui.keys.*
+import ui.logs.*
 import ui.members.*
 import ui.ops.*
 import ui.profile.*
@@ -120,6 +121,7 @@ fun ContentArea(
                         ModuleType.CURSOR -> CursorContent(onStatusMessage = onStatusMessage)
                         ModuleType.MEMBERS -> MembersContent(onStatusMessage = onStatusMessage)
                         ModuleType.EXPENSE -> ExpenseContent()
+                        ModuleType.LOGS -> LogsContent()
                         ModuleType.PROFILE -> ProfileContent(onLogout = onLogout)
                         ModuleType.SETTINGS -> SettingsContent()
                     }

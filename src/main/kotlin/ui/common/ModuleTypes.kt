@@ -18,6 +18,7 @@ enum class ModuleType(
     CURSOR("Cursor", Icons.Default.SmartToy),
     MEMBERS("成员", Icons.Default.People),
     EXPENSE("报销", Icons.Default.Receipt),
+    LOGS("日志", Icons.Default.Description),
     PROFILE("个人", Icons.Default.AccountCircle),
     SETTINGS("设置", Icons.Default.Settings)
 }

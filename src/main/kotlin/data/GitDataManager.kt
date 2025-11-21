@@ -8,6 +8,7 @@ import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.lib.Repository
 import org.eclipse.jgit.storage.file.FileRepositoryBuilder
 import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider
+import utils.Logger
 import java.io.File
 
 /**
@@ -51,7 +52,7 @@ object GitDataManager {
             System.setProperty("java.lang.management.ManagementFactory.createPlatformMXBean", "false")
         } catch (e: Exception) {
             // 忽略设置系统属性时的异常
-            println("⚠️ GitDataManager: 设置系统属性时出现异常: ${e.message}")
+            Logger.warn("GitDataManager: 设置系统属性时出现异常: ${e.message}")
         }
 
         // 确保目录存在
@@ -196,29 +197,29 @@ object GitDataManager {
                     if (branchName != "HEAD" && !branchName.contains("HEAD")) {
                         memberNames.add(branchName)
                     }
-                    println("✅ 成功处理分支: $branchName")
+                    Logger.info("成功处理分支: $branchName")
                 } else {
-                    println("⚠️ 分支 $branchName 处理失败: ${branchResult.exceptionOrNull()?.message}")
+                    Logger.warn("分支 $branchName 处理失败: ${branchResult.exceptionOrNull()?.message ?: "未知错误"}")
                     // 继续处理其他分支，不中断整个流程
                 }
             }
 
-            // 切换回主分支
-            try {
-                git.checkout().setName("main").call()
-            } catch (e: Exception) {
-                println("⚠️ 切换回主分支失败: ${e.message}")
-                // 尝试切换到master分支
+                // 切换回主分支
+                try {
+                    git.checkout().setName("main").call()
+                } catch (e: Exception) {
+                    Logger.warn("切换回主分支失败: ${e.message}")
+                    // 尝试切换到master分支
                 try {
                     git.checkout().setName("master").call()
                 } catch (e2: Exception) {
-                    println("⚠️ 切换回master分支也失败: ${e2.message}")
+                    Logger.warn("切换回master分支也失败: ${e2.message}")
                 }
             }
 
             Result.success(memberNames)
         } catch (e: Exception) {
-            println("❌ 拉取所有分支时出现严重错误: ${e.message}")
+            Logger.error("拉取所有分支时出现严重错误: ${e.message}", e)
             Result.failure(e)
         }
     }
@@ -237,16 +238,16 @@ object GitDataManager {
 
         for (attempt in 1..maxRetries) {
             try {
-                println("正在处理分支 $branchName (尝试 $attempt/$maxRetries)")
+                Logger.debug("正在处理分支 $branchName (尝试 $attempt/$maxRetries)")
 
                 // 如果是重试，或者第一次尝试时目录已存在且可能有问题，先删除成员目录
                 if (attempt > 1 || (attempt == 1 && memberDir.exists() && isMemberDirectoryEmpty(memberDir))) {
-                    println("${if (attempt > 1) "重试前" else "检测到空的成员目录"}删除成员目录: ${memberDir.absolutePath}")
+                    Logger.debug("${if (attempt > 1) "重试前" else "检测到空的成员目录"}删除成员目录: ${memberDir.absolutePath}")
                     try {
                         memberDir.deleteRecursively()
                         memberDir.mkdirs()
                     } catch (e: Exception) {
-                        println("⚠️ 删除成员目录失败: ${e.message}")
+                        Logger.warn("删除成员目录失败: ${e.message}")
                     }
                 }
 
@@ -258,13 +259,13 @@ object GitDataManager {
                     git.checkout().setName(branchName).call()
                 } catch (e: Exception) {
                     // 如果checkout失败，先删除成员目录，然后重新创建跟踪分支
-                    println("checkout失败，删除成员目录并重新尝试: $branchName")
+                    Logger.debug("checkout失败，删除成员目录并重新尝试: $branchName")
                     try {
                         memberDir.deleteRecursively()
                         memberDir.mkdirs()
-                        println("已删除并重新创建成员目录: ${memberDir.absolutePath}")
+                        Logger.debug("已删除并重新创建成员目录: ${memberDir.absolutePath}")
                     } catch (deleteException: Exception) {
-                        println("⚠️ 删除成员目录失败: ${deleteException.message}")
+                        Logger.warn("删除成员目录失败: ${deleteException.message}")
                     }
 
                     // 重新尝试创建跟踪分支
@@ -274,9 +275,9 @@ object GitDataManager {
                             .setName(branchName)
                             .setStartPoint("origin/$branchName")
                             .call()
-                        println("成功创建跟踪分支: $branchName")
+                        Logger.debug("成功创建跟踪分支: $branchName")
                     } catch (createException: Exception) {
-                        println("创建跟踪分支也失败: ${createException.message}")
+                        Logger.warn("创建跟踪分支也失败: ${createException.message}")
                         throw createException
                     }
                 }
@@ -296,13 +297,13 @@ object GitDataManager {
 
             } catch (e: Exception) {
                 lastException = e
-                println("分支 $branchName 处理失败 (尝试 $attempt/$maxRetries): ${e.message}")
+                Logger.warn("分支 $branchName 处理失败 (尝试 $attempt/$maxRetries): ${e.message}")
 
                 // 检查是否是 JMX 相关异常
                 if (e.javaClass.name.contains("MalformedObjectNameException") ||
                     e.message?.contains("JMX") == true ||
                     e.message?.contains("MBean") == true) {
-                    println("检测到 JMX 相关异常，尝试禁用更多 JMX 功能")
+                    Logger.debug("检测到 JMX 相关异常，尝试禁用更多 JMX 功能")
 
                     // 额外禁用 JMX 设置
                     try {
@@ -313,13 +314,13 @@ object GitDataManager {
                         System.setProperty("javax.management.builder.initial", "")
                         System.setProperty("javax.management.MBeanServerBuilder", "")
                     } catch (jmxException: Exception) {
-                        println("⚠️ 额外 JMX 禁用失败: ${jmxException.message}")
+                        Logger.warn("额外 JMX 禁用失败: ${jmxException.message}")
                     }
                 }
 
                 // 如果不是最后一次尝试，继续重试
                 if (attempt < maxRetries) {
-                    println("等待1秒后重试...")
+                    Logger.debug("等待1秒后重试...")
                     kotlinx.coroutines.delay(1000)
                     continue
                 }
@@ -328,8 +329,10 @@ object GitDataManager {
 
         // 返回结果
         if (success) {
+            Logger.debug("分支 $branchName 拉取成功")
             Result.success(Unit)
         } else {
+            Logger.error("分支 $branchName 拉取失败: ${lastException?.message}", lastException)
             Result.failure(lastException ?: Exception("未知错误"))
         }
     }
@@ -731,11 +734,13 @@ object GitDataManager {
      */
     suspend fun syncAllBranches(): Result<Unit> = withContext(Dispatchers.IO) {
         try {
+            Logger.info("开始同步所有用户分支数据")
             val repoSettings = RepositorySettingsManager.getCurrentSettings()
             if (!repoSettings.enabled || repoSettings.repositoryUrl.isBlank()) {
-                println("仓库未配置，只合并本地数据")
+                Logger.warn("Git仓库未配置，只执行本地数据合并")
                 // 即使仓库未配置，也要合并本地数据
                 mergeAllUserData()
+                Logger.info("本地数据合并完成")
                 return@withContext Result.success(Unit)
             }
 
@@ -745,6 +750,7 @@ object GitDataManager {
             // 为每个用户仓库执行拉取操作
             for (userDir in userDirs) {
                 val userName = userDir.name
+                Logger.debug("开始同步用户 $userName 的数据")
                 try {
                     val userGitDir = File(userDir, ".git")
                     if (userGitDir.exists()) {
@@ -796,33 +802,35 @@ object GitDataManager {
                                 pullCommand.setCredentialsProvider(UsernamePasswordCredentialsProvider(repoSettings.username, repoSettings.password))
                             }
                             pullCommand.call()
-                            println("✅ 已更新用户 $userName 的仓库")
+                            Logger.info("用户 $userName 的数据同步成功")
                         } finally {
                             userGit.close()
                         }
                     }
                 } catch (e: Exception) {
-                    println("⚠️ 同步用户 $userName 仓库失败: ${e.message}")
+                    Logger.error("用户 $userName 的数据同步失败: ${e.message}", e)
                 }
             }
 
             // 合并数据到本地缓存
             mergeAllUserData()
+            Logger.info("所有用户分支数据同步完成")
 
             Result.success(Unit)
         } catch (e: OutOfMemoryError) {
             // 处理内存不足错误
-            println("❌ 内存不足错误: ${e.message}")
+            Logger.error("数据同步失败 - 内存不足错误: ${e.message}", e)
             Result.failure(RuntimeException("内存不足，无法执行Git操作", e))
         } catch (e: StackOverflowError) {
             // 处理栈溢出错误
-            println("❌ 栈溢出错误: ${e.message}")
+            Logger.error("数据同步失败 - 栈溢出错误: ${e.message}", e)
             Result.failure(RuntimeException("栈溢出，无法执行Git操作", e))
         } catch (e: Error) {
             // 处理所有其他 Error 类型异常
-            println("❌ 系统错误: ${e.message}")
+            Logger.error("数据同步失败 - 系统错误: ${e.message}", e)
             Result.failure(RuntimeException("系统错误，无法执行Git操作: ${e.javaClass.simpleName}", e))
         } catch (e: Exception) {
+            Logger.error("数据同步失败: ${e.message}", e)
             Result.failure(e)
         }
     }
@@ -953,10 +961,12 @@ object GitDataManager {
      */
     suspend fun pushCurrentUserData(userName: String): Result<Unit> = withContext(Dispatchers.IO) {
         try {
+            Logger.info("开始推送用户 $userName 的数据")
             val userLocalDir = File(usersDir, userName)
             val userGitDir = File(userLocalDir, ".git")
 
             if (!userGitDir.exists()) {
+                Logger.error("推送失败: 用户 $userName 的Git仓库不存在")
                 return@withContext Result.failure(Exception("用户 $userName 的Git仓库不存在"))
             }
 
@@ -964,16 +974,21 @@ object GitDataManager {
             val userGit = Git.open(userLocalDir)
             try {
                 // 添加所有更改
+                Logger.debug("为用户 $userName 添加文件更改")
                 userGit.add().addFilepattern(".").call()
 
                 // 检查是否有更改需要提交
                 val status = userGit.status().call()
                 if (status.hasUncommittedChanges() || !status.untracked.isEmpty()) {
+                    Logger.debug("用户 $userName 有更改需要提交，创建提交")
                     // 创建提交
                     userGit.commit().setMessage("Update data for user: $userName").call()
+                } else {
+                    Logger.debug("用户 $userName 没有需要提交的更改")
                 }
 
                 // 推送到远程仓库
+                Logger.debug("开始推送用户 $userName 的数据到远程仓库")
                 val repoSettings = RepositorySettingsManager.getCurrentSettings()
                 val pushCommand = userGit.push().setRemote("origin")
                 if (repoSettings.username.isNotBlank() && repoSettings.password.isNotBlank()) {
@@ -981,13 +996,13 @@ object GitDataManager {
                 }
                 pushCommand.call()
 
-                println("✅ 用户 $userName 的数据已推送到远程仓库")
+                Logger.info("用户 $userName 的数据推送成功")
                 Result.success(Unit)
             } finally {
                 userGit.close()
             }
         } catch (e: Exception) {
-            println("❌ 推送用户 $userName 数据失败: ${e.message}")
+            Logger.error("推送用户 $userName 数据失败: ${e.message}", e)
             Result.failure(e)
         }
     }

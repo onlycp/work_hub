@@ -55,26 +55,18 @@ fun main() {
         when (throwable) {
             is OutOfMemoryError -> {
                 Logger.error("未捕获的内存不足错误 (线程: ${thread.name})", throwable)
-                println("💥 未捕获的内存不足错误 (线程: ${thread.name}): ${throwable.message}")
-                println("🚨 建议重启应用以释放内存")
             }
             is StackOverflowError -> {
                 Logger.error("未捕获的栈溢出错误 (线程: ${thread.name})", throwable)
-                println("💥 未捕获的栈溢出错误 (线程: ${thread.name}): ${throwable.message}")
-                println("🚨 可能存在递归调用问题，建议检查代码逻辑")
             }
             is Error -> {
                 Logger.error("未捕获的系统错误 (线程: ${thread.name})", throwable)
-                println("💥 未捕获的系统错误 (线程: ${thread.name}): ${throwable.javaClass.simpleName} - ${throwable.message}")
-                println("🚨 系统级错误，应用可能无法正常运行")
             }
             is Exception -> {
                 Logger.error("未捕获的异常 (线程: ${thread.name})", throwable)
-                println("💥 未捕获的异常 (线程: ${thread.name}): ${throwable.javaClass.simpleName} - ${throwable.message}")
             }
             else -> {
                 Logger.error("未捕获的未知异常 (线程: ${thread.name})", throwable)
-                println("💥 未捕获的未知异常 (线程: ${thread.name}): ${throwable.javaClass.simpleName} - ${throwable.message}")
             }
         }
     }
@@ -129,30 +121,24 @@ fun main() {
                 when (throwable) {
                     is OutOfMemoryError -> {
                         Logger.error("协程内存不足错误 (${coroutineContext[CoroutineName]?.name ?: "unknown"})", throwable)
-                        println("💥 协程内存不足错误: ${throwable.message}")
                     }
                     is StackOverflowError -> {
                         Logger.error("协程栈溢出错误 (${coroutineContext[CoroutineName]?.name ?: "unknown"})", throwable)
-                        println("💥 协程栈溢出错误: ${throwable.message}")
                     }
                     is Error -> {
                         Logger.error("协程系统错误 (${coroutineContext[CoroutineName]?.name ?: "unknown"})", throwable)
-                        println("💥 协程系统错误: ${throwable.javaClass.simpleName} - ${throwable.message}")
                     }
                     is Exception -> {
                         Logger.error("协程异常 (${coroutineContext[CoroutineName]?.name ?: "unknown"})", throwable)
-                        println("💥 协程异常: ${throwable.javaClass.simpleName} - ${throwable.message}")
                     }
                     else -> {
                         Logger.error("协程未知异常 (${coroutineContext[CoroutineName]?.name ?: "unknown"})", throwable)
-                        println("💥 协程未知异常: ${throwable.javaClass.simpleName} - ${throwable.message}")
                     }
                 }
             }
             // 设置协程异常处理器
             val exceptionHandler = CoroutineExceptionHandler { coroutineContext, throwable ->
                 Logger.error("协程异常 (${coroutineContext[CoroutineName]?.name ?: "unknown"})", throwable)
-                println("💥 协程异常: ${throwable.javaClass.simpleName} - ${throwable.message}")
             }
             Logger.log("🚀 开始应用初始化...")
             Logger.log("🪟 窗口应该已经显示，showLoginDialog = $showLoginDialog")
@@ -219,7 +205,7 @@ fun main() {
     }
 
     val windowState = rememberWindowState(
-        size = DpSize(1300.dp, 800.dp), // macOS风格的窗口尺寸
+        size = DpSize(1500.dp, 920.dp), // 默认窗口尺寸
         position = WindowPosition.Aligned(Alignment.Center)
     )
 
@@ -425,19 +411,19 @@ fun main() {
  * 执行退出清理并退出应用
  */
 fun performExitCleanup() {
-    println("📤 开始执行退出清理...")
+    Logger.info("开始执行退出清理")
 
     // 同步Git数据
     runBlocking {
         try {
             val syncResult = AppInitializer.syncData()
             if (syncResult.isSuccess) {
-                println("✓ 数据同步完成")
+                Logger.info("数据同步完成")
             } else {
-                println("⚠️ 数据同步失败: ${syncResult.exceptionOrNull()?.message}")
+                            Logger.warn("数据同步失败: ${syncResult.exceptionOrNull()?.message ?: "未知错误"}")
             }
         } catch (e: Exception) {
-            println("⚠️ 数据同步异常: ${e.message}")
+            Logger.warn("数据同步异常: ${e.message}")
         }
     }
 
@@ -447,6 +433,6 @@ fun performExitCleanup() {
     // 这里可以添加其他清理逻辑，比如断开SSH连接等
     // TODO: 如果需要清理SSH连接或其他资源，在这里添加
 
-    println("✓ 清理完成，正在退出进程...")
+    Logger.info("清理完成，正在退出进程")
     kotlin.system.exitProcess(0)
 }
