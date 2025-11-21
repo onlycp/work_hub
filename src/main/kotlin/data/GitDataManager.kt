@@ -731,6 +731,41 @@ object GitDataManager {
                 try {
                     val userGitDir = File(userDir, ".git")
                     if (userGitDir.exists()) {
+                        // 检查用户目录是否只有.git目录，如果是则删除并从远程checkout
+                        val userFiles = userDir.listFiles()
+                        val hasOnlyGit = userFiles?.size == 1 && userFiles[0].name == ".git"
+                        if (hasOnlyGit) {
+                            println("⚠️ 检测到用户 $userName 的目录只有.git目录，删除并从远程checkout")
+                            try {
+                                userDir.deleteRecursively()
+                                userDir.mkdirs()
+
+                                // 从远程checkout用户分支
+                                val repoSettings = RepositorySettingsManager.getCurrentSettings()
+                                if (repoSettings.enabled && repoSettings.repositoryUrl.isNotBlank()) {
+                                    val cloneCommand = Git.cloneRepository()
+                                        .setURI(repoSettings.repositoryUrl)
+                                        .setDirectory(userDir)
+                                        .setBranch(userName) // 指定checkout的分支
+
+                                    if (repoSettings.username.isNotBlank() && repoSettings.password.isNotBlank()) {
+                                        cloneCommand.setCredentialsProvider(UsernamePasswordCredentialsProvider(repoSettings.username, repoSettings.password))
+                                    }
+
+                                    val userGit = cloneCommand.call()
+                                    userGit.close()
+                                    println("✅ 已从远程checkout用户 $userName 的分支")
+                                    continue
+                                } else {
+                                    println("⚠️ 仓库未配置，无法从远程checkout用户分支")
+                                    continue
+                                }
+                            } catch (checkoutException: Exception) {
+                                println("⚠️ 从远程checkout用户 $userName 分支失败: ${checkoutException.message}")
+                                continue
+                            }
+                        }
+
                         val userGit = Git.open(userDir)
                         try {
                             // 检查当前分支和远程跟踪分支
