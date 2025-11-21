@@ -239,9 +239,9 @@ object GitDataManager {
             try {
                 println("正在处理分支 $branchName (尝试 $attempt/$maxRetries)")
 
-                // 如果是重试，先删除成员目录
-                if (attempt > 1) {
-                    println("重试前删除成员目录: ${memberDir.absolutePath}")
+                // 如果是重试，或者第一次尝试时目录已存在且可能有问题，先删除成员目录
+                if (attempt > 1 || (attempt == 1 && memberDir.exists() && (memberDir.listFiles()?.isEmpty() == true))) {
+                    println("${if (attempt > 1) "重试前" else "检测到空的成员目录"}删除成员目录: ${memberDir.absolutePath}")
                     try {
                         memberDir.deleteRecursively()
                         memberDir.mkdirs()
@@ -257,16 +257,27 @@ object GitDataManager {
                 try {
                     git.checkout().setName(branchName).call()
                 } catch (e: Exception) {
-                    if (e.message?.contains("ref") == true || e.message?.contains("branch") == true) {
-                        // 如果是分支不存在的错误，尝试创建本地分支跟踪远程分支
-                        println("本地分支不存在，创建跟踪分支: $branchName")
+                    // 如果checkout失败，先删除成员目录，然后重新创建跟踪分支
+                    println("checkout失败，删除成员目录并重新尝试: $branchName")
+                    try {
+                        memberDir.deleteRecursively()
+                        memberDir.mkdirs()
+                        println("已删除并重新创建成员目录: ${memberDir.absolutePath}")
+                    } catch (deleteException: Exception) {
+                        println("⚠️ 删除成员目录失败: ${deleteException.message}")
+                    }
+
+                    // 重新尝试创建跟踪分支
+                    try {
                         git.checkout()
                             .setCreateBranch(true)
                             .setName(branchName)
                             .setStartPoint("origin/$branchName")
                             .call()
-                    } else {
-                        throw e
+                        println("成功创建跟踪分支: $branchName")
+                    } catch (createException: Exception) {
+                        println("创建跟踪分支也失败: ${createException.message}")
+                        throw createException
                     }
                 }
 
@@ -757,13 +768,54 @@ object GitDataManager {
                                 println("⚠️ 设置上游分支失败，继续拉取: ${e.message}")
                             }
 
-                            // 执行拉取操作
-                            val pullCommand = userGit.pull()
-                            if (repoSettings.username.isNotBlank() && repoSettings.password.isNotBlank()) {
-                                pullCommand.setCredentialsProvider(UsernamePasswordCredentialsProvider(repoSettings.username, repoSettings.password))
+                            // 检查并确保分支存在于远程仓库
+                            val availableDefaultBranch = findAvailableDefaultBranch(userGit, repoSettings, userName)
+                            if (availableDefaultBranch != null && availableDefaultBranch != branchName) {
+                                println("⚠️ 用户 $userName 的分支 $branchName 在远程不存在，切换到 $availableDefaultBranch")
+                                try {
+                                    // 尝试切换到可用的分支
+                                    userGit.checkout().setName(availableDefaultBranch).call()
+                                    // 更新当前分支名称
+                                    val newCurrentBranch = userGit.repository.fullBranch
+                                    val newBranchName = newCurrentBranch.substringAfter("refs/heads/")
+                                    println("✅ 已切换用户 $userName 到分支 $newBranchName")
+                                } catch (switchException: Exception) {
+                                    println("⚠️ 切换分支失败: ${switchException.message}")
+                                    // 继续使用当前分支
+                                }
                             }
-                            pullCommand.call()
-                            println("✅ 已更新用户 $userName 的仓库")
+
+                            // 执行拉取操作
+                            try {
+                                val pullCommand = userGit.pull()
+                                if (repoSettings.username.isNotBlank() && repoSettings.password.isNotBlank()) {
+                                    pullCommand.setCredentialsProvider(UsernamePasswordCredentialsProvider(repoSettings.username, repoSettings.password))
+                                }
+                                pullCommand.call()
+                                println("✅ 已更新用户 $userName 的仓库")
+                            } catch (pullException: Exception) {
+                                // 如果拉取失败，可能是因为分支不存在，尝试重新初始化
+                                if (pullException.message?.contains("did not advertise Ref for branch") == true ||
+                                    pullException.message?.contains("Remote origin did not advertise") == true) {
+                                    println("⚠️ 拉取失败，分支可能不存在，尝试重新初始化用户仓库")
+                                    try {
+                                        userGit.close()
+                                        // 删除现有的仓库目录
+                                        userDir.deleteRecursively()
+                                        // 重新创建仓库
+                                        val recreateResult = createUserBranch(userName)
+                                        if (recreateResult.isSuccess) {
+                                            println("✅ 已重新创建用户 $userName 的仓库")
+                                        } else {
+                                            println("⚠️ 重新创建用户 $userName 的仓库失败: ${recreateResult.exceptionOrNull()?.message}")
+                                        }
+                                    } catch (recreateException: Exception) {
+                                        println("⚠️ 重新创建用户仓库异常: ${recreateException.message}")
+                                    }
+                                } else {
+                                    throw pullException
+                                }
+                            }
                         } finally {
                             userGit.close()
                         }
@@ -782,6 +834,41 @@ object GitDataManager {
         }
     }
 
+    /**
+     * 查找可用的默认分支
+     */
+    private suspend fun findAvailableDefaultBranch(
+        userGit: Git,
+        repoSettings: RepositorySettings,
+        userName: String
+    ): String? = withContext(Dispatchers.IO) {
+        try {
+            // 获取远程分支列表
+            val lsRemote = org.eclipse.jgit.api.LsRemoteCommand(userGit.repository)
+                .setRemote("origin")
+                .setHeads(true)
+
+            if (repoSettings.username.isNotBlank() && repoSettings.password.isNotBlank()) {
+                lsRemote.setCredentialsProvider(UsernamePasswordCredentialsProvider(repoSettings.username, repoSettings.password))
+            }
+
+            val remoteRefs = lsRemote.call()
+            val remoteBranchNames = remoteRefs.map { ref ->
+                ref.name.removePrefix("refs/heads/")
+            }
+
+            // 优先级：main -> master -> 其他分支 -> null
+            when {
+                "main" in remoteBranchNames -> "main"
+                "master" in remoteBranchNames -> "master"
+                remoteBranchNames.isNotEmpty() -> remoteBranchNames.first()
+                else -> null
+            }
+        } catch (e: Exception) {
+            println("⚠️ 获取用户 $userName 的远程分支列表失败: ${e.message}")
+            null
+        }
+    }
 
     /**
      * 推送当前用户的数据
