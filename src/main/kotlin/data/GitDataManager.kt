@@ -240,7 +240,7 @@ object GitDataManager {
                 println("正在处理分支 $branchName (尝试 $attempt/$maxRetries)")
 
                 // 如果是重试，或者第一次尝试时目录已存在且可能有问题，先删除成员目录
-                if (attempt > 1 || (attempt == 1 && memberDir.exists() && (memberDir.listFiles()?.isEmpty() == true))) {
+                if (attempt > 1 || (attempt == 1 && memberDir.exists() && isMemberDirectoryEmpty(memberDir))) {
                     println("${if (attempt > 1) "重试前" else "检测到空的成员目录"}删除成员目录: ${memberDir.absolutePath}")
                     try {
                         memberDir.deleteRecursively()
@@ -791,6 +791,29 @@ object GitDataManager {
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    /**
+     * 检查成员目录是否实质为空（只包含.git目录或其他临时文件）
+     */
+    private fun isMemberDirectoryEmpty(memberDir: File): Boolean {
+        if (!memberDir.exists()) return false
+
+        val files = memberDir.listFiles()
+        if (files == null || files.isEmpty()) return true
+
+        // 如果只有一个.git目录，也认为是空目录
+        if (files.size == 1 && files[0].name == ".git") return true
+
+        // 检查是否所有文件都是临时文件或.git相关的文件
+        val nonTempFiles = files.filter { file ->
+            !file.name.startsWith(".") && // 不是隐藏文件
+            file.name != ".git" && // 不是.git目录
+            !file.name.endsWith(".tmp") && // 不是临时文件
+            !file.name.endsWith(".lock") // 不是锁文件
+        }
+
+        return nonTempFiles.isEmpty()
     }
 
     /**
