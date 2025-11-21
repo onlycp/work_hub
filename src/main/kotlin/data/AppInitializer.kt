@@ -95,8 +95,12 @@ object AppInitializer {
         }
 
         try {
-            // 1. 首先合并本地数据，确保获取已有的成员信息
-            GitDataManager.mergeAllUserData()
+            // 1. 发现并同步所有远程用户分支
+            println("正在发现并同步远程用户分支...")
+            val discoverResult = GitDataManager.discoverAndSyncUserBranches()
+            if (discoverResult.isFailure) {
+                println("⚠️ 用户分支发现失败，继续本地检查: ${discoverResult.exceptionOrNull()?.message}")
+            }
 
             // 获取所有成员数据
             val mergedData = GitDataManager.getAllMergedData()

@@ -500,6 +500,91 @@ object GitDataManager {
     }
 
     /**
+     * 发现并同步所有远程用户分支
+     * 为不存在的远程用户分支创建本地用户仓库
+     */
+    suspend fun discoverAndSyncUserBranches(): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val repoSettings = RepositorySettingsManager.getCurrentSettings()
+            if (!repoSettings.enabled || repoSettings.repositoryUrl.isBlank()) {
+                return@withContext Result.success(Unit)
+            }
+
+            // 1. 获取远程仓库的所有分支
+            val testConnectionResult = testRepositoryConnection(
+                repositoryUrl = repoSettings.repositoryUrl,
+                username = repoSettings.username.takeIf { it.isNotBlank() },
+                password = repoSettings.password.takeIf { it.isNotBlank() }
+            )
+
+            if (testConnectionResult.isFailure) {
+                println("⚠️ 无法连接远程仓库，跳过用户分支发现: ${testConnectionResult.exceptionOrNull()?.message}")
+                return@withContext Result.success(Unit)
+            }
+
+            // 2. 从连接测试结果中解析分支信息（这里需要修改testRepositoryConnection来返回分支列表）
+            // 暂时使用ls-remote获取分支列表
+            val lsRemote = org.eclipse.jgit.api.LsRemoteCommand(null)
+                .setRemote(repoSettings.repositoryUrl)
+                .setHeads(true)
+
+            if (repoSettings.username.isNotBlank() && repoSettings.password.isNotBlank()) {
+                lsRemote.setCredentialsProvider(UsernamePasswordCredentialsProvider(repoSettings.username, repoSettings.password))
+            }
+
+            val remoteRefs = lsRemote.call()
+            val userBranches = remoteRefs.map { ref ->
+                ref.name.removePrefix("refs/heads/")
+            }.filter { branchName ->
+                // 过滤出用户分支（非main/master的分支可以认为是用户分支）
+                branchName != "main" && branchName != "master" && !branchName.contains("/")
+            }
+
+            println("发现 ${userBranches.size} 个用户分支: ${userBranches.joinToString(", ")}")
+
+            // 3. 为每个用户分支创建本地仓库（如果不存在）
+            for (userName in userBranches) {
+                val userLocalDir = File(usersDir, userName)
+                val userGitDir = File(userLocalDir, ".git")
+
+                if (!userGitDir.exists()) {
+                    // 创建用户分支的本地仓库
+                    val createResult = createUserBranch(userName)
+                    if (createResult.isFailure) {
+                        println("⚠️ 为用户 $userName 创建本地仓库失败: ${createResult.exceptionOrNull()?.message}")
+                    } else {
+                        println("✅ 为用户 $userName 创建了本地仓库")
+                    }
+                } else {
+                    // 如果已存在，同步数据
+                    try {
+                        val userGit = Git.open(userLocalDir)
+                        try {
+                            val pullCommand = userGit.pull()
+                            if (repoSettings.username.isNotBlank() && repoSettings.password.isNotBlank()) {
+                                pullCommand.setCredentialsProvider(UsernamePasswordCredentialsProvider(repoSettings.username, repoSettings.password))
+                            }
+                            pullCommand.call()
+                            println("✅ 已同步用户 $userName 的仓库")
+                        } finally {
+                            userGit.close()
+                        }
+                    } catch (e: Exception) {
+                        println("⚠️ 同步用户 $userName 仓库失败: ${e.message}")
+                    }
+                }
+            }
+
+            // 4. 合并所有用户数据
+            mergeAllUserData()
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /**
      * 同步所有用户数据
      * 现在每个用户目录都是独立的Git仓库，需要分别更新
      */
