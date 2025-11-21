@@ -33,6 +33,7 @@ fun CommandDialog(
     // 表单状态
     var name by remember { mutableStateOf(initialRule?.name ?: "") }
     var script by remember { mutableStateOf(initialRule?.script ?: "") }
+    var workingDirectory by remember { mutableStateOf(initialRule?.workingDirectory ?: "") }
     var logFile by remember { mutableStateOf(initialRule?.logFile ?: "") }
     var remarks by remember { mutableStateOf(initialRule?.remarks ?: "") }
 
@@ -159,6 +160,18 @@ fun CommandDialog(
 
                     Spacer(modifier = Modifier.height(AppDimensions.SpaceS))
 
+                    // 工作目录
+                    OutlinedTextField(
+                        value = workingDirectory,
+                        onValueChange = { workingDirectory = it },
+                        label = { Text("工作目录", style = AppTypography.Caption) },
+                        placeholder = { Text("例如: /home/user/app（可选，留空使用默认目录）", style = AppTypography.Caption) },
+                        modifier = Modifier.fillMaxWidth(),
+                        maxLines = 1
+                    )
+
+                    Spacer(modifier = Modifier.height(AppDimensions.SpaceS))
+
                     // 日志文件路径
                     OutlinedTextField(
                         value = logFile,
@@ -214,6 +227,7 @@ fun CommandDialog(
                                         id = initialRule?.id ?: "",
                                         name = name.trim(),
                                         script = script.trim(),
+                                        workingDirectory = workingDirectory.trim(),
                                         logFile = logFile.trim(),
                                         remarks = remarks.trim(),
                                         autoStart = false

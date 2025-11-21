@@ -12,9 +12,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import data.AuthType
 import data.BaseData
 import data.KeyData
@@ -226,51 +228,114 @@ fun KeysContent(
     var showKeyDialog by remember { mutableStateOf(false) }
     var editingKey by remember { mutableStateOf<KeyData?>(null) }
     var showDeleteConfirmDialog by remember { mutableStateOf<KeyData?>(null) }
+    var searchQuery by remember { mutableStateOf("") }
 
     // 日期格式化器
     val dateFormatter = remember { SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()) }
+
+    // 过滤后的密钥列表
+    val filteredKeys = remember(keys, searchQuery) {
+        if (searchQuery.isBlank()) {
+            keys
+        } else {
+            keys.filter { key ->
+                key.name.contains(searchQuery, ignoreCase = true) ||
+                key.username.contains(searchQuery, ignoreCase = true) ||
+                key.createdBy.contains(searchQuery, ignoreCase = true) ||
+                when (key.authType) {
+                    AuthType.PASSWORD -> "密码".contains(searchQuery, ignoreCase = true)
+                    AuthType.KEY -> "密钥".contains(searchQuery, ignoreCase = true)
+                } ||
+                (key.isShared && "共享".contains(searchQuery, ignoreCase = true)) ||
+                (!key.isShared && "私有".contains(searchQuery, ignoreCase = true))
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(AppDimensions.PaddingScreen)
     ) {
-        // 页面标题
-        Text(
-            text = "密钥管理",
-            style = AppTypography.TitleLarge,
-            color = AppColors.TextPrimary,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(bottom = AppDimensions.SpaceL)
-        )
 
         // 操作栏
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "密钥列表 (${keys.size})",
-                style = AppTypography.BodyLarge,
-                color = AppColors.TextPrimary,
-                fontWeight = FontWeight.Medium
-            )
-
-            Button(
-                onClick = {
-                    editingKey = null
-                    showKeyDialog = true
-                },
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = "添加密钥",
-                    modifier = Modifier.size(16.dp)
+                Text(
+                    text = "密钥列表 (${filteredKeys.size}${if (searchQuery.isNotBlank()) "/${keys.size}" else ""})",
+                    style = AppTypography.BodyLarge,
+                    color = AppColors.TextPrimary,
+                    fontWeight = FontWeight.Medium
                 )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("添加密钥", style = AppTypography.Caption)
+
+                Button(
+                    onClick = {
+                        editingKey = null
+                        showKeyDialog = true
+                    },
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "添加密钥",
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("添加密钥", style = AppTypography.Caption)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(AppDimensions.SpaceS))
+
+            // 搜索框
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = {
+                        Text(
+                            text = "搜索密钥（名称、用户名、认证类型、共享状态等）",
+                            style = AppTypography.BodySmall,
+                            color = AppColors.TextDisabled
+                        )
+                    },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = "搜索",
+                            tint = AppColors.TextDisabled,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    },
+                    trailingIcon = if (searchQuery.isNotBlank()) {
+                        {
+                            IconButton(
+                                onClick = { searchQuery = "" },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Clear,
+                                    contentDescription = "清除搜索",
+                                    tint = AppColors.TextDisabled,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                        }
+                    } else null,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(AppDimensions.InputHeightSmall),
+                    textStyle = TextStyle(fontSize = 14.sp),
+                    singleLine = true,
+                    shape = RoundedCornerShape(AppDimensions.CornerSmall)
+                )
             }
         }
 
@@ -282,7 +347,7 @@ fun KeysContent(
             elevation = 4.dp,
             shape = RoundedCornerShape(AppDimensions.RadiusL)
         ) {
-            if (keys.isEmpty()) {
+            if (filteredKeys.isEmpty()) {
                 // 空状态
                 Box(
                     modifier = Modifier
@@ -384,7 +449,7 @@ fun KeysContent(
                             .weight(1f)
                             .fillMaxWidth()
                     ) {
-                        items(keys) { key ->
+                        items(filteredKeys) { key ->
                             KeyTableRow(
                                 key = key,
                                 dateFormatter = dateFormatter,

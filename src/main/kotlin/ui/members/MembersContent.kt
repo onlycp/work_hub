@@ -12,9 +12,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import data.CurrentUserManager
 import data.MemberData
 import data.MemberManager
@@ -134,51 +136,108 @@ fun MembersContent(
     var showMemberDialog by remember { mutableStateOf(false) }
     var editingMember by remember { mutableStateOf<MemberData?>(null) }
     var showDeleteConfirmDialog by remember { mutableStateOf<MemberData?>(null) }
+    var searchQuery by remember { mutableStateOf("") }
 
     // 日期格式化器
     val dateFormatter = remember { SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()) }
+
+    // 过滤后的成员列表
+    val filteredMembers = remember(members, searchQuery) {
+        if (searchQuery.isBlank()) {
+            members
+        } else {
+            members.filter { member ->
+                member.name.contains(searchQuery, ignoreCase = true) ||
+                member.number.contains(searchQuery, ignoreCase = true) ||
+                member.introduction.contains(searchQuery, ignoreCase = true)
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(AppDimensions.PaddingScreen)
     ) {
-        // 页面标题
-        Text(
-            text = "成员管理",
-            style = AppTypography.TitleLarge,
-            color = AppColors.TextPrimary,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(bottom = AppDimensions.SpaceL)
-        )
 
         // 操作栏
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "成员列表 (${members.size})",
-                style = AppTypography.BodyLarge,
-                color = AppColors.TextPrimary,
-                fontWeight = FontWeight.Medium
-            )
-
-            Button(
-                onClick = {
-                    editingMember = null
-                    showMemberDialog = true
-                },
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = "添加成员",
-                    modifier = Modifier.size(16.dp)
+                Text(
+                    text = "成员列表 (${filteredMembers.size}${if (searchQuery.isNotBlank()) "/${members.size}" else ""})",
+                    style = AppTypography.BodyLarge,
+                    color = AppColors.TextPrimary,
+                    fontWeight = FontWeight.Medium
                 )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("添加成员", style = AppTypography.Caption)
+
+                Button(
+                    onClick = {
+                        editingMember = null
+                        showMemberDialog = true
+                    },
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "添加成员",
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("添加成员", style = AppTypography.Caption)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(AppDimensions.SpaceS))
+
+            // 搜索框
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = {
+                        Text(
+                            text = "搜索成员（姓名、编号、个人介绍等）",
+                            style = AppTypography.BodySmall,
+                            color = AppColors.TextDisabled
+                        )
+                    },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = "搜索",
+                            tint = AppColors.TextDisabled,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    },
+                    trailingIcon = if (searchQuery.isNotBlank()) {
+                        {
+                            IconButton(
+                                onClick = { searchQuery = "" },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Clear,
+                                    contentDescription = "清除搜索",
+                                    tint = AppColors.TextDisabled,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                        }
+                    } else null,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(AppDimensions.InputHeightSmall),
+                    textStyle = TextStyle(fontSize = 14.sp),
+                    singleLine = true,
+                    shape = RoundedCornerShape(AppDimensions.CornerSmall)
+                )
             }
         }
 
@@ -190,7 +249,7 @@ fun MembersContent(
             elevation = 4.dp,
             shape = RoundedCornerShape(AppDimensions.RadiusL)
         ) {
-            if (members.isEmpty()) {
+            if (filteredMembers.isEmpty()) {
                 // 空状态
                 Box(
                     modifier = Modifier
@@ -278,7 +337,7 @@ fun MembersContent(
                             .weight(1f)
                             .fillMaxWidth()
                     ) {
-                        items(members) { member ->
+                        items(filteredMembers) { member ->
                             MemberTableRow(
                                 member = member,
                                 dateFormatter = dateFormatter,

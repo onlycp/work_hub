@@ -7,9 +7,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntSize
@@ -32,6 +35,7 @@ fun CommandExecutionDialog(
     onDismiss: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
+    val clipboardManager = LocalClipboardManager.current
 
     // 输出内容状态
     var commandOutput by remember { mutableStateOf("") }
@@ -43,6 +47,11 @@ fun CommandExecutionDialog(
 
     // 直接执行，不需要确认对话框
     var isCommandStarted by remember { mutableStateOf(false) }
+
+    // 拷贝功能
+    fun copyToClipboard(text: String) {
+        clipboardManager.setText(AnnotatedString(text))
+    }
 
     // 调试输出
     println("CommandExecutionDialog: 初始化，command=${commandRule.name}")
@@ -64,26 +73,48 @@ fun CommandExecutionDialog(
                 val sshClient = SSHSessionManager.getSession(config.name)
                     ?: throw Exception("SSH连接不存在")
 
-                // 构造执行命令，如果有工作目录则先切换目录
-                val finalCommand = if (commandRule.workingDirectory.isNotBlank()) {
-                    "cd \"${commandRule.workingDirectory}\" && ${commandRule.script}"
-                } else {
-                    commandRule.script
-                }
+                // 检查脚本是否包含换行符，如果有则使用多行执行
+                val hasMultipleLines = commandRule.script.contains('\n') &&
+                    commandRule.script.lines().any { it.trim().isNotEmpty() }
 
-                val result = sshClient.executeCommandStream(
-                    command = finalCommand,
-                    onOutput = { line ->
-                        commandOutput += line
-                    },
-                    onError = { line ->
-                        commandOutput += line
-                        executionError = "执行出错"
-                    },
-                    onComplete = {
-                        isExecuting = false
+                val result = if (hasMultipleLines) {
+                    // 多行命令：按行顺序执行
+                    sshClient.executeMultiLineCommandStream(
+                        script = commandRule.script,
+                        workingDirectory = commandRule.workingDirectory,
+                        onOutput = { line ->
+                            commandOutput += line
+                        },
+                        onError = { line ->
+                            commandOutput += line
+                            executionError = "执行出错"
+                        },
+                        onComplete = {
+                            isExecuting = false
+                        }
+                    )
+                } else {
+                    // 单行命令：使用原有的执行方式
+                    val finalCommand = if (commandRule.workingDirectory.isNotBlank()) {
+                        "cd \"${commandRule.workingDirectory}\" && ${commandRule.script}"
+                    } else {
+                        commandRule.script
                     }
-                )
+
+                    sshClient.executeCommandStream(
+                        command = finalCommand,
+                        onOutput = { line ->
+                            commandOutput += line
+                        },
+                        onError = { line ->
+                            commandOutput += line
+                            executionError = "执行出错"
+                        },
+                        onComplete = {
+                            isExecuting = false
+                        }
+                    )
+                }
 
                 if (result.isFailure) {
                     executionError = result.exceptionOrNull()?.message ?: "执行失败"
@@ -191,9 +222,12 @@ fun CommandExecutionDialog(
                                     Button(
                                         onClick = {
                                             executeCommand()
-                                            startLogMonitoring()
+                                            // 只有在没有启动日志监控时才启动日志监控
+                                            if (!isMonitoringLog && commandRule.logFile.isNotBlank()) {
+                                                startLogMonitoring()
+                                            }
                                         },
-                                        enabled = !isExecuting && !isMonitoringLog,
+                                        enabled = !isExecuting,
                                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                                         modifier = Modifier.height(28.dp)
                                     ) {
@@ -264,7 +298,7 @@ fun CommandExecutionDialog(
                                         .fillMaxSize()
                                         .padding(AppDimensions.SpaceM)
                                 ) {
-                                    // 状态栏
+                                    // 状态栏和操作按钮
                                     Surface(
                                         modifier = Modifier.fillMaxWidth(),
                                         color = AppColors.BackgroundSecondary,
@@ -281,35 +315,54 @@ fun CommandExecutionDialog(
                                                 color = AppColors.TextPrimary
                                             )
                                             Spacer(modifier = Modifier.weight(1f))
-                                            if (isExecuting) {
-                                                CircularProgressIndicator(
-                                                    modifier = Modifier.size(16.dp),
-                                                    strokeWidth = 2.dp
-                                                )
-                                                Spacer(modifier = Modifier.width(AppDimensions.SpaceS))
-                                                Text(
-                                                    text = "执行中...",
-                                                    style = AppTypography.Caption,
-                                                    color = AppColors.TextSecondary
-                                                )
-                                            } else if (executionError != null) {
-                                                Text(
-                                                    text = "执行失败",
-                                                    style = AppTypography.Caption,
-                                                    color = AppColors.Error
-                                                )
-                                            } else if (isCommandStarted) {
-                                                Text(
-                                                    text = "执行完成",
-                                                    style = AppTypography.Caption,
-                                                    color = AppColors.Success
-                                                )
-                                            } else {
-                                                Text(
-                                                    text = "等待执行",
-                                                    style = AppTypography.Caption,
-                                                    color = AppColors.TextSecondary
-                                                )
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(AppDimensions.SpaceS)
+                                            ) {
+                                                // 拷贝按钮
+                                                if (commandOutput.isNotEmpty()) {
+                                                    IconButton(
+                                                        onClick = { copyToClipboard(commandOutput) },
+                                                        modifier = Modifier.size(28.dp)
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.ContentCopy,
+                                                            contentDescription = "拷贝命令输出",
+                                                            tint = AppColors.TextSecondary,
+                                                            modifier = Modifier.size(16.dp)
+                                                        )
+                                                    }
+                                                }
+                                                if (isExecuting) {
+                                                    CircularProgressIndicator(
+                                                        modifier = Modifier.size(16.dp),
+                                                        strokeWidth = 2.dp
+                                                    )
+                                                    Spacer(modifier = Modifier.width(AppDimensions.SpaceS))
+                                                    Text(
+                                                        text = "执行中...",
+                                                        style = AppTypography.Caption,
+                                                        color = AppColors.TextSecondary
+                                                    )
+                                                } else if (executionError != null) {
+                                                    Text(
+                                                        text = "执行失败",
+                                                        style = AppTypography.Caption,
+                                                        color = AppColors.Error
+                                                    )
+                                                } else if (isCommandStarted) {
+                                                    Text(
+                                                        text = "执行完成",
+                                                        style = AppTypography.Caption,
+                                                        color = AppColors.Success
+                                                    )
+                                                } else {
+                                                    Text(
+                                                        text = "等待执行",
+                                                        style = AppTypography.Caption,
+                                                        color = AppColors.TextSecondary
+                                                    )
+                                                }
                                             }
                                         }
                                     }
@@ -362,7 +415,7 @@ fun CommandExecutionDialog(
                                         .fillMaxSize()
                                         .padding(AppDimensions.SpaceM)
                                 ) {
-                                    // 日志文件路径
+                                    // 日志文件路径和操作按钮
                                     if (commandRule.logFile.isNotBlank()) {
                                         Surface(
                                             modifier = Modifier.fillMaxWidth(),
@@ -386,29 +439,48 @@ fun CommandExecutionDialog(
                                                     fontWeight = FontWeight.Medium
                                                 )
                                                 Spacer(modifier = Modifier.weight(1f))
-                                                if (isMonitoringLog) {
-                                                    CircularProgressIndicator(
-                                                        modifier = Modifier.size(14.dp),
-                                                        strokeWidth = 2.dp
-                                                    )
-                                                    Spacer(modifier = Modifier.width(AppDimensions.SpaceS))
-                                                    Text(
-                                                        text = "监控中...",
-                                                        style = AppTypography.Caption,
-                                                        color = AppColors.TextSecondary
-                                                    )
-                                                } else if (logError != null) {
-                                                    Text(
-                                                        text = "监控失败",
-                                                        style = AppTypography.Caption,
-                                                        color = AppColors.Error
-                                                    )
-                                                } else if (commandRule.logFile.isNotBlank()) {
-                                                    Text(
-                                                        text = "未启动",
-                                                        style = AppTypography.Caption,
-                                                        color = AppColors.TextSecondary
-                                                    )
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(AppDimensions.SpaceS)
+                                                ) {
+                                                    // 拷贝按钮
+                                                    if (logOutput.isNotEmpty()) {
+                                                        IconButton(
+                                                            onClick = { copyToClipboard(logOutput) },
+                                                            modifier = Modifier.size(28.dp)
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.Default.ContentCopy,
+                                                                contentDescription = "拷贝日志内容",
+                                                                tint = AppColors.TextSecondary,
+                                                                modifier = Modifier.size(16.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                    if (isMonitoringLog) {
+                                                        CircularProgressIndicator(
+                                                            modifier = Modifier.size(14.dp),
+                                                            strokeWidth = 2.dp
+                                                        )
+                                                        Spacer(modifier = Modifier.width(AppDimensions.SpaceS))
+                                                        Text(
+                                                            text = "监控中...",
+                                                            style = AppTypography.Caption,
+                                                            color = AppColors.TextSecondary
+                                                        )
+                                                    } else if (logError != null) {
+                                                        Text(
+                                                            text = "监控失败",
+                                                            style = AppTypography.Caption,
+                                                            color = AppColors.Error
+                                                        )
+                                                    } else if (commandRule.logFile.isNotBlank()) {
+                                                        Text(
+                                                            text = "未启动",
+                                                            style = AppTypography.Caption,
+                                                            color = AppColors.TextSecondary
+                                                        )
+                                                    }
                                                 }
                                             }
                                         }

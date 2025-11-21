@@ -231,9 +231,16 @@ fun App(onLogout: () -> Unit = {}) {
         // 选择主机时不自动展开右侧抽屉面板
     }
 
-    // 初始化SSH配置
+    // 初始化和重新加载SSH配置
     LaunchedEffect(Unit) {
-        sshConfigs = SSHConfigManager.getAllConfigs()
+        try {
+            // 确保数据被正确加载
+            sshConfigs = SSHConfigManager.getAllConfigs()
+            println("SSH配置加载完成，共 ${sshConfigs.size} 个配置")
+        } catch (e: Exception) {
+            println("SSH配置加载失败: ${e.message}")
+            statusMessage = "数据加载失败: ${e.message}"
+        }
     }
 
     AppTheme {
@@ -275,6 +282,13 @@ fun App(onLogout: () -> Unit = {}) {
 
                             // 重新加载SSH配置
                             sshConfigs = SSHConfigManager.getAllConfigs()
+
+                            // 重新初始化各个管理器
+                            SSHConfigManager.setCurrentUser(currentUser)
+                            KeyManager.setCurrentUser(currentUser)
+                            CursorRuleManager.setCurrentUser(currentUser)
+                            MemberManager.setCurrentUser(currentUser)
+                            ExpenseManager.setCurrentUser(currentUser)
 
                             statusMessage = "数据同步完成"
                         } catch (e: Exception) {

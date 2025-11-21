@@ -8,6 +8,7 @@ import data.SSHConfigData
 import theme.AppColors
 import theme.AppDimensions
 import ui.cursor.*
+import ui.expense.*
 import ui.home.*
 import ui.keys.*
 import ui.members.*
@@ -118,6 +119,7 @@ fun ContentArea(
                         ModuleType.KEYS -> KeysContent(onStatusMessage = onStatusMessage)
                         ModuleType.CURSOR -> CursorContent(onStatusMessage = onStatusMessage)
                         ModuleType.MEMBERS -> MembersContent(onStatusMessage = onStatusMessage)
+                        ModuleType.EXPENSE -> ExpenseContent()
                         ModuleType.PROFILE -> ProfileContent(onLogout = onLogout)
                         ModuleType.SETTINGS -> SettingsContent()
                     }

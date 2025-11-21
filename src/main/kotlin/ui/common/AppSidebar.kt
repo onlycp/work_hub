@@ -32,8 +32,8 @@ fun Sidebar(
         modifier = Modifier
             .width(AppDimensions.SidebarWidth)
             .fillMaxHeight(),
-        color = AppColors.BackgroundSecondary,
-        elevation = 2.dp
+        color = AppColors.Surface, // macOS侧边栏使用白色背景
+        elevation = AppDimensions.ElevationXS // macOS风格的细微阴影
     ) {
         Column(
             modifier = Modifier
@@ -88,9 +88,9 @@ private fun ModuleButton(
                 .size(40.dp)
                 .clickable(onClick = onClick)
                 .hoverable(interactionSource),
-            shape = RoundedCornerShape(10.dp),
+            shape = RoundedCornerShape(AppDimensions.CornerMedium), // macOS风格更大圆角
             color = if (isSelected)
-                AppColors.Primary.copy(alpha = 0.15f)
+                AppColors.Primary.copy(alpha = 0.1f) // macOS更柔和的选择色
             else if (isHovered)
                 AppColors.BackgroundTertiary
             else

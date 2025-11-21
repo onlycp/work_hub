@@ -25,6 +25,7 @@ import androidx.compose.ui.window.Dialog
 import data.AppInitializer
 import data.LoginSettingsManager
 import data.RepositorySettingsManager
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import theme.*
@@ -63,13 +64,16 @@ fun UserLoginDialog(
 
     val scope = rememberCoroutineScope()
 
+    // 注意：rememberCoroutineScope() 创建的 scope 不应该被手动取消
+    // 它会随着 Composable 的生命周期自动管理
+
     // 检查仓库是否已配置
     val isRepositoryConfigured by remember { derivedStateOf { RepositorySettingsManager.isRepositoryConfigured() } }
 
     // 登录成功动画效果
     LaunchedEffect(loginSuccess) {
         if (loginSuccess) {
-            delay(800) // 短暂延迟显示成功动画
+            delay(1200) // 增加延迟时间，确保数据加载完成
             onLoginSuccess()
         }
     }
@@ -81,8 +85,8 @@ fun UserLoginDialog(
             .background(
                 Brush.verticalGradient(
                     colors = listOf(
-                        Color(0xFF667EEA).copy(alpha = 0.9f),
-                        Color(0xFF764BA2).copy(alpha = 0.9f)
+                        Color(0xFFE3F2FD).copy(alpha = 0.9f),
+                        Color(0xFFF3E5F5).copy(alpha = 0.9f)
                     )
                 )
             ),
@@ -153,8 +157,8 @@ fun UserLoginDialog(
                         .background(
                             Brush.linearGradient(
                                 colors = listOf(
-                                    Color(0xFF667EEA),
-                                    Color(0xFF764BA2)
+                                    Color(0xFF90CAF9),
+                                    Color(0xFFCE93D8)
                                 )
                             )
                         ),
@@ -272,9 +276,9 @@ fun UserLoginDialog(
                             shape = RoundedCornerShape(12.dp),
                             colors = TextFieldDefaults.outlinedTextFieldColors(
                                 backgroundColor = Color(0xFFF8F9FA),
-                                focusedBorderColor = Color(0xFF667EEA),
+                                focusedBorderColor = Color(0xFF90CAF9),
                                 unfocusedBorderColor = Color(0xFFE0E0E0),
-                                cursorColor = Color(0xFF667EEA)
+                                cursorColor = Color(0xFF90CAF9)
                             )
                         )
 
@@ -332,9 +336,9 @@ fun UserLoginDialog(
                             shape = RoundedCornerShape(12.dp),
                             colors = TextFieldDefaults.outlinedTextFieldColors(
                                 backgroundColor = Color(0xFFF8F9FA),
-                                focusedBorderColor = Color(0xFF667EEA),
+                                focusedBorderColor = Color(0xFF90CAF9),
                                 unfocusedBorderColor = Color(0xFFE0E0E0),
-                                cursorColor = Color(0xFF667EEA)
+                                cursorColor = Color(0xFF90CAF9)
                             )
                         )
 
@@ -360,7 +364,7 @@ fun UserLoginDialog(
                                         }
                                     },
                                     colors = CheckboxDefaults.colors(
-                                        checkedColor = Color(0xFF667EEA),
+                                        checkedColor = Color(0xFF90CAF9),
                                         uncheckedColor = Color(0xFFCCCCCC)
                                     )
                                 )
@@ -384,7 +388,7 @@ fun UserLoginDialog(
                                     onCheckedChange = { autoLogin = it },
                                     enabled = rememberPassword,
                                     colors = CheckboxDefaults.colors(
-                                        checkedColor = Color(0xFF667EEA),
+                                        checkedColor = Color(0xFF90CAF9),
                                         uncheckedColor = Color(0xFFCCCCCC)
                                     )
                                 )
@@ -458,19 +462,26 @@ fun UserLoginDialog(
 
                                         val result = AppInitializer.loginUser(userName)
                                         if (result.isSuccess) {
-                                            // 登录成功，保存登录设置
-                                            scope.launch {
+                                            try {
+                                                // 登录成功，保存登录设置（同步执行，确保完成后再设置成功状态）
                                                 LoginSettingsManager.saveLoginSettings(
                                                     username = userName,
                                                     password = password,
                                                     rememberPassword = rememberPassword,
                                                     autoLogin = autoLogin
                                                 )
+                                                loginSuccess = true
+                                            } catch (e: Exception) {
+                                                println("保存登录设置失败: ${e.message}")
+                                                // 保存设置失败不影响登录，继续设置成功状态
+                                                loginSuccess = true
                                             }
-                                            loginSuccess = true
                                         } else {
                                             errorMessage = result.exceptionOrNull()?.message ?: "登录失败"
                                         }
+                                    } catch (e: Exception) {
+                                        println("登录过程异常: ${e.message}")
+                                        errorMessage = "登录失败: ${e.message}"
                                     } finally {
                                         isLoading = false
                                     }
@@ -494,8 +505,8 @@ fun UserLoginDialog(
                                         if (!isLoading && !loginSuccess) {
                                             Brush.horizontalGradient(
                                                 colors = listOf(
-                                                    Color(0xFF667EEA),
-                                                    Color(0xFF764BA2)
+                                                    Color(0xFF90CAF9),
+                                                    Color(0xFFCE93D8)
                                                 )
                                             )
                                         } else if (loginSuccess) {

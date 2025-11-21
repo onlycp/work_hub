@@ -326,6 +326,125 @@ class SSHClientManager(private val config: SSHConfig) {
     }
 
     /**
+     * 执行多行命令（按行顺序执行）
+     */
+    suspend fun executeMultiLineCommandStream(
+        script: String,
+        workingDirectory: String = "",
+        onOutput: (String) -> Unit,
+        onError: (String) -> Unit,
+        onComplete: () -> Unit
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            if (_state.value != SSHSessionState.Connected) {
+                return@withContext Result.failure(Exception("未连接到服务器"))
+            }
+
+            val client = sshClient ?: return@withContext Result.failure(Exception("SSH客户端未初始化"))
+
+            // 取消之前的命令执行任务
+            commandExecutionJob?.cancel()
+            commandExecutionJob = null
+
+            // 创建新的命令执行任务
+            commandExecutionJob = CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    // 按行分割脚本
+                    val lines = script.lines().filter { it.trim().isNotEmpty() }
+
+                    for (line in lines) {
+                        try {
+                            // 跳过注释行（以#开头的行）
+                            if (line.trim().startsWith("#")) {
+                                onOutput("# $line (跳过注释)\n")
+                                continue
+                            }
+
+                            // 显示正在执行的命令
+                            onOutput("$ $line\n")
+
+                            // 构造执行命令，如果有工作目录则先切换目录
+                            val finalCommand = if (workingDirectory.isNotBlank()) {
+                                "cd \"${workingDirectory}\" && $line"
+                            } else {
+                                line
+                            }
+
+                            // 创建新的会话执行单行命令
+                            val cmdSession = client.startSession()
+                            val cmd = cmdSession.exec(finalCommand)
+
+                            // 异步读取标准输出
+                            val outputJob = launch {
+                                try {
+                                    val reader = cmd.inputStream.bufferedReader(Charsets.UTF_8)
+                                    reader.useLines { outputLines ->
+                                        outputLines.forEach { outputLine ->
+                                            onOutput("$outputLine\n")
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                    onError("读取输出失败: ${e.message}\n")
+                                }
+                            }
+
+                            // 异步读取错误输出
+                            val errorJob = launch {
+                                try {
+                                    val reader = cmd.errorStream.bufferedReader(Charsets.UTF_8)
+                                    reader.useLines { errorLines ->
+                                        errorLines.forEach { errorLine ->
+                                            onError("$errorLine\n")
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                    onError("读取错误输出失败: ${e.message}\n")
+                                }
+                            }
+
+                            // 等待命令完成，最多30秒
+                            val completed = withTimeoutOrNull(30000) {
+                                cmd.join()
+                                true
+                            } ?: false
+
+                            if (!completed) {
+                                onError("命令执行超时: $line\n")
+                            }
+
+                            // 等待输出读取完成
+                            outputJob.join()
+                            errorJob.join()
+
+                            cmdSession.close()
+
+                            // 添加一行分隔符
+                            onOutput("---\n")
+
+                        } catch (e: Exception) {
+                            onError("执行异常 [$line]: ${e.message}\n")
+                        }
+                    }
+
+                    onComplete()
+                } catch (e: Exception) {
+                    onError("多行命令执行异常: ${e.message}\n")
+                    onComplete()
+                }
+            }
+
+            // 等待命令执行任务完成
+            commandExecutionJob?.join()
+            commandExecutionJob = null
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            println("执行多行命令失败: ${e.message}")
+            Result.failure(e)
+        }
+    }
+
+    /**
      * 执行命令并返回实时输出流
      */
     suspend fun executeCommandStream(

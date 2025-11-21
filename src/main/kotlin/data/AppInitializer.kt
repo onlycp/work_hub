@@ -211,6 +211,7 @@ object AppInitializer {
         KeyManager.setCurrentUser(userId)
         CursorRuleManager.setCurrentUser(userId)
         MemberManager.setCurrentUser(userId)
+        ExpenseManager.setCurrentUser(userId)
         // SettingsManager 可能需要特殊处理，因为它是用户个人的
     }
 }

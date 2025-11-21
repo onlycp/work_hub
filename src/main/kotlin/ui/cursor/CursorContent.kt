@@ -269,14 +269,6 @@ fun CursorContent(
             .fillMaxSize()
             .padding(AppDimensions.PaddingScreen)
     ) {
-        // 页面标题
-        Text(
-            text = "Cursor规则管理",
-            style = AppTypography.TitleLarge,
-            color = AppColors.TextPrimary,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(bottom = AppDimensions.SpaceL)
-        )
 
         // 操作栏
         Row(

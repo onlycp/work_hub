@@ -17,6 +17,7 @@ enum class ModuleType(
     KEYS("密钥", Icons.Default.VpnKey),
     CURSOR("Cursor", Icons.Default.SmartToy),
     MEMBERS("成员", Icons.Default.People),
+    EXPENSE("报销", Icons.Default.Receipt),
     PROFILE("个人", Icons.Default.AccountCircle),
     SETTINGS("设置", Icons.Default.Settings)
 }

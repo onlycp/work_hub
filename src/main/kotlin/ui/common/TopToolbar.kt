@@ -30,14 +30,7 @@ fun TopToolbar(
         modifier = Modifier
             .fillMaxWidth()
             .height(AppDimensions.ToolbarHeight)
-            .background(
-                brush = Brush.horizontalGradient(
-                    colors = listOf(
-                        AppColors.Primary.copy(alpha = 0.1f),
-                        AppColors.PrimaryVariant.copy(alpha = 0.05f)
-                    )
-                )
-            )
+            .background(AppColors.BackgroundPrimary) // macOS风格统一背景色
             .padding(horizontal = AppDimensions.PaddingScreen),
         verticalAlignment = Alignment.CenterVertically
     ) {
