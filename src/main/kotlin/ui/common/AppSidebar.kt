@@ -26,7 +26,8 @@ import theme.*
 @Composable
 fun Sidebar(
     selectedModule: ModuleType,
-    onModuleSelected: (ModuleType) -> Unit
+    onModuleSelected: (ModuleType) -> Unit,
+    currentUserName: String = ""
 ) {
     Surface(
         modifier = Modifier
@@ -58,7 +59,8 @@ fun Sidebar(
             ModuleButton(
                 module = ModuleType.PROFILE,
                 isSelected = selectedModule == ModuleType.PROFILE,
-                onClick = { onModuleSelected(ModuleType.PROFILE) }
+                onClick = { onModuleSelected(ModuleType.PROFILE) },
+                customDisplayName = if (currentUserName.isNotEmpty()) currentUserName else null
             )
         }
     }
@@ -71,7 +73,8 @@ fun Sidebar(
 private fun ModuleButton(
     module: ModuleType,
     isSelected: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    customDisplayName: String? = null
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isHovered by interactionSource.collectIsHoveredAsState()
@@ -113,7 +116,7 @@ private fun ModuleButton(
         Spacer(modifier = Modifier.height(4.dp))
 
         Text(
-            text = module.displayName,
+            text = customDisplayName ?: module.displayName,
             fontSize = 9.sp,
             color = if (isSelected) AppColors.Primary else AppColors.TextSecondary,
             fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal,

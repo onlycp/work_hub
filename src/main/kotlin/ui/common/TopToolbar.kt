@@ -6,6 +6,7 @@ import androidx.compose.material.Icon
 import androidx.compose.material.IconButton
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Refresh
@@ -24,7 +25,8 @@ import theme.*
 fun TopToolbar(
     onLogClick: () -> Unit,
     onSettingsClick: () -> Unit,
-    onSyncClick: () -> Unit
+    onSyncClick: () -> Unit,
+    onExitClick: () -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -98,6 +100,19 @@ fun TopToolbar(
                 Icon(
                     imageVector = Icons.Default.Settings,
                     contentDescription = "设置",
+                    tint = AppColors.TextSecondary,
+                    modifier = Modifier.size(AppDimensions.IconSizeM)
+                )
+            }
+
+            // 退出按钮
+            IconButton(
+                onClick = onExitClick,
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ExitToApp,
+                    contentDescription = "退出程序",
                     tint = AppColors.TextSecondary,
                     modifier = Modifier.size(AppDimensions.IconSizeM)
                 )

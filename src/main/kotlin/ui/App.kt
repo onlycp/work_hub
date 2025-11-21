@@ -295,6 +295,32 @@ fun App(onLogout: () -> Unit = {}) {
                             statusMessage = "同步失败: ${e.message}"
                         }
                     }
+                },
+                onExitClick = {
+                    scope.launch {
+                        try {
+                            statusMessage = "正在退出程序..."
+
+                            // 断开所有SSH连接
+                            sshConnectionStates.keys.forEach { configId ->
+                                try {
+                                    val config = SSHConfigManager.getConfigById(configId)
+                                    if (config != null) {
+                                        SSHSessionManager.getSession(config.name)?.disconnect()
+                                        SSHSessionManager.removeSession(config.name)
+                                    }
+                                } catch (e: Exception) {
+                                    // 忽略单个连接的断开错误
+                                }
+                            }
+
+                            // 执行退出清理
+                            performExitCleanup()
+
+                        } catch (e: Exception) {
+                            statusMessage = "退出失败: ${e.message}"
+                        }
+                    }
                 }
             )
 
@@ -306,7 +332,8 @@ fun App(onLogout: () -> Unit = {}) {
                     onModuleSelected = { module ->
                         selectedModule = module
                         statusMessage = "切换到 ${module.displayName}"
-                    }
+                    },
+                    currentUserName = CurrentUserManager.getCurrentUserName()
                 )
 
                 // 右侧内容区
