@@ -346,31 +346,70 @@ object GitDataManager {
                         ref.name == "refs/remotes/origin/$userName" || ref.name == "origin/$userName"
                     }
 
+                    // 6. 如果分支不存在，尝试查找默认分支（main或master）
+                    var defaultBranch = "main"
+                    if (!branchExists) {
+                        val hasMain = remoteBranches.any { ref ->
+                            ref.name == "refs/remotes/origin/main" || ref.name == "origin/main"
+                        }
+                        val hasMaster = remoteBranches.any { ref ->
+                            ref.name == "refs/remotes/origin/master" || ref.name == "origin/master"
+                        }
+                        defaultBranch = when {
+                            hasMain -> "main"
+                            hasMaster -> "master"
+                            else -> "main" // 默认使用main
+                        }
+                    }
+
                     if (branchExists) {
                         // 分支已存在，拉取分支内容
                         println("✅ 用户分支 $userName 已存在于远程，切换到该分支")
-                        userGit.checkout().setName(userName).call()
+                        try {
+                            // 尝试切换到现有分支
+                            userGit.checkout().setName(userName).call()
+                        } catch (e: Exception) {
+                            // 如果切换失败，创建本地分支跟踪远程分支
+                            println("本地分支不存在，创建跟踪分支: $userName")
+                            userGit.checkout()
+                                .setCreateBranch(true)
+                                .setName(userName)
+                                .setStartPoint("origin/$userName")
+                                .call()
+                        }
+
+                        // 拉取最新内容
                         userGit.pull()
                             .setRemote("origin")
                             .setRemoteBranchName(userName)
                             .call()
                     } else {
                         // 分支不存在，需要创建
-                        // 6. 创建初始化数据文件
+                        // 7. 创建初始化数据文件
                         if (!gitDir.exists()) {
                             createInitialUserDataFiles(userLocalDir, userName)
 
-                            // 7. 添加所有文件到Git
+                            // 8. 添加所有文件到Git
                             userGit.add().addFilepattern(".").call()
 
-                            // 8. 创建初始提交
+                            // 9. 创建初始提交
                             userGit.commit().setMessage("Initial commit for user: $userName").call()
                         }
 
-                        // 9. 创建并切换到用户分支
-                        userGit.checkout().setCreateBranch(true).setName(userName).call()
+                        // 10. 创建并切换到用户分支（基于默认分支）
+                        try {
+                            userGit.checkout()
+                                .setCreateBranch(true)
+                                .setName(userName)
+                                .setStartPoint("origin/$defaultBranch")
+                                .call()
+                        } catch (e: Exception) {
+                            // 如果默认分支不存在，从当前HEAD创建
+                            println("⚠️ 默认分支 $defaultBranch 不存在，从当前HEAD创建分支")
+                            userGit.checkout().setCreateBranch(true).setName(userName).call()
+                        }
 
-                        // 10. 推送到远程仓库
+                        // 11. 推送到远程仓库
                         val pushCommand = userGit.push().setRemote("origin")
                         if (repoSettings.username.isNotBlank() && repoSettings.password.isNotBlank()) {
                             pushCommand.setCredentialsProvider(UsernamePasswordCredentialsProvider(repoSettings.username, repoSettings.password))
@@ -485,6 +524,42 @@ object GitDataManager {
                     if (userGitDir.exists()) {
                         val userGit = Git.open(userDir)
                         try {
+                            // 检查当前分支和远程跟踪分支
+                            val currentBranch = userGit.repository.fullBranch
+                            val branchName = currentBranch.substringAfter("refs/heads/")
+
+                            // 设置上游分支（如果还没有设置）
+                            try {
+                                val config = userGit.repository.config
+                                val remoteRef = config.getString("branch", branchName, "remote")
+                                val mergeRef = config.getString("branch", branchName, "merge")
+
+                                if (remoteRef.isNullOrBlank() || mergeRef.isNullOrBlank()) {
+                                    // 设置上游分支
+                                    userGit.branchList().setListMode(org.eclipse.jgit.api.ListBranchCommand.ListMode.REMOTE).call()
+                                    val remoteBranches = userGit.branchList().setListMode(org.eclipse.jgit.api.ListBranchCommand.ListMode.REMOTE).call()
+                                    val matchingRemote = remoteBranches.find { ref ->
+                                        ref.name.endsWith("/$branchName")
+                                    }
+
+                                    if (matchingRemote != null) {
+                                        userGit.branchList().setListMode(org.eclipse.jgit.api.ListBranchCommand.ListMode.REMOTE).call()
+                                        val remoteName = matchingRemote.name.substringAfter("refs/remotes/")
+                                        userGit.branchList().setListMode(org.eclipse.jgit.api.ListBranchCommand.ListMode.REMOTE).call()
+                                        val remote = remoteName.substringBefore("/")
+                                        val remoteBranch = remoteName.substringAfter("/")
+
+                                        config.setString("branch", branchName, "remote", remote)
+                                        config.setString("branch", branchName, "merge", "refs/heads/$remoteBranch")
+                                        config.save()
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                // 忽略上游分支设置错误
+                                println("⚠️ 设置上游分支失败，继续拉取: ${e.message}")
+                            }
+
+                            // 执行拉取操作
                             val pullCommand = userGit.pull()
                             if (repoSettings.username.isNotBlank() && repoSettings.password.isNotBlank()) {
                                 pullCommand.setCredentialsProvider(UsernamePasswordCredentialsProvider(repoSettings.username, repoSettings.password))
@@ -760,7 +835,7 @@ object GitDataManager {
         }
     }
 
-    private suspend fun mergeAllUserData() = withContext(Dispatchers.IO) {
+    suspend fun mergeAllUserData() = withContext(Dispatchers.IO) {
         // 清空合并目录
         mergedDir.listFiles()?.forEach { it.deleteRecursively() }
 

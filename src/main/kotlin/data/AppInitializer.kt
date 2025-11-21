@@ -31,12 +31,8 @@ object AppInitializer {
                 // 配置验证失败不影响应用启动，继续
             }
 
-            // 3. 同步所有分支数据
-            val syncResult = GitDataManager.syncAllBranches()
-            if (syncResult.isFailure) {
-                println("数据同步失败: ${syncResult.exceptionOrNull()?.message}")
-                // 同步失败不影响应用启动，继续
-            }
+            // 3. 初始化本地数据合并（不需要同步远程，因为此时还没有用户）
+            GitDataManager.mergeAllUserData()
 
             println("应用初始化完成")
             Result.success(Unit)
@@ -99,12 +95,8 @@ object AppInitializer {
         }
 
         try {
-            // 1. 首先同步所有分支，确保获取最新的远程分支信息
-            println("正在同步所有分支数据...")
-            val preLoginSyncResult = GitDataManager.syncAllBranches()
-            if (preLoginSyncResult.isFailure) {
-                println("⚠️ 分支同步失败，继续尝试登录: ${preLoginSyncResult.exceptionOrNull()?.message}")
-            }
+            // 1. 首先合并本地数据，确保获取已有的成员信息
+            GitDataManager.mergeAllUserData()
 
             // 获取所有成员数据
             val mergedData = GitDataManager.getAllMergedData()
