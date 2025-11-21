@@ -679,6 +679,11 @@ object GitDataManager {
                         println("  ✅ 为用户 $userName 创建了本地仓库")
                     }
                 } else {
+                    // 检查并修复空的Git仓库
+                    if (checkAndRepairEmptyUserRepository(userName, userLocalDir)) {
+                        continue // 已修复，跳过后续处理
+                    }
+
                     // 如果已存在，同步数据
                     println("  同步用户 $userName 的仓库...")
                     try {
@@ -731,39 +736,9 @@ object GitDataManager {
                 try {
                     val userGitDir = File(userDir, ".git")
                     if (userGitDir.exists()) {
-                        // 检查用户目录是否只有.git目录，如果是则删除并从远程checkout
-                        val userFiles = userDir.listFiles()
-                        val hasOnlyGit = userFiles?.size == 1 && userFiles[0].name == ".git"
-                        if (hasOnlyGit) {
-                            println("⚠️ 检测到用户 $userName 的目录只有.git目录，删除并从远程checkout")
-                            try {
-                                userDir.deleteRecursively()
-                                userDir.mkdirs()
-
-                                // 从远程checkout用户分支
-                                val repoSettings = RepositorySettingsManager.getCurrentSettings()
-                                if (repoSettings.enabled && repoSettings.repositoryUrl.isNotBlank()) {
-                                    val cloneCommand = Git.cloneRepository()
-                                        .setURI(repoSettings.repositoryUrl)
-                                        .setDirectory(userDir)
-                                        .setBranch(userName) // 指定checkout的分支
-
-                                    if (repoSettings.username.isNotBlank() && repoSettings.password.isNotBlank()) {
-                                        cloneCommand.setCredentialsProvider(UsernamePasswordCredentialsProvider(repoSettings.username, repoSettings.password))
-                                    }
-
-                                    val userGit = cloneCommand.call()
-                                    userGit.close()
-                                    println("✅ 已从远程checkout用户 $userName 的分支")
-                                    continue
-                                } else {
-                                    println("⚠️ 仓库未配置，无法从远程checkout用户分支")
-                                    continue
-                                }
-                            } catch (checkoutException: Exception) {
-                                println("⚠️ 从远程checkout用户 $userName 分支失败: ${checkoutException.message}")
-                                continue
-                            }
+                        // 检查并修复空的Git仓库
+                        if (checkAndRepairEmptyUserRepository(userName, userDir)) {
+                            continue // 已修复，跳过后续处理
                         }
 
                         val userGit = Git.open(userDir)
@@ -825,6 +800,47 @@ object GitDataManager {
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
+        }
+    }
+
+    /**
+     * 检查并修复空的Git仓库目录（只包含.git目录的情况）
+     * 如果用户目录只有.git目录，则删除并从远程重新checkout分支
+     */
+    private suspend fun checkAndRepairEmptyUserRepository(userName: String, userDir: File): Boolean = withContext(Dispatchers.IO) {
+        val userFiles = userDir.listFiles()
+        val hasOnlyGit = userFiles?.size == 1 && userFiles[0].name == ".git"
+
+        if (!hasOnlyGit) return@withContext false
+
+        println("⚠️ 检测到用户 $userName 的目录只有.git目录，删除并从远程checkout")
+        try {
+            userDir.deleteRecursively()
+            userDir.mkdirs()
+
+            // 从远程checkout用户分支
+            val repoSettings = RepositorySettingsManager.getCurrentSettings()
+            if (repoSettings.enabled && repoSettings.repositoryUrl.isNotBlank()) {
+                val cloneCommand = Git.cloneRepository()
+                    .setURI(repoSettings.repositoryUrl)
+                    .setDirectory(userDir)
+                    .setBranch(userName) // 指定checkout的分支
+
+                if (repoSettings.username.isNotBlank() && repoSettings.password.isNotBlank()) {
+                    cloneCommand.setCredentialsProvider(UsernamePasswordCredentialsProvider(repoSettings.username, repoSettings.password))
+                }
+
+                val userGit = cloneCommand.call()
+                userGit.close()
+                println("✅ 已从远程checkout用户 $userName 的分支")
+                return@withContext true
+            } else {
+                println("⚠️ 仓库未配置，无法从远程checkout用户分支")
+                return@withContext false
+            }
+        } catch (checkoutException: Exception) {
+            println("⚠️ 从远程checkout用户 $userName 分支失败: ${checkoutException.message}")
+            return@withContext false
         }
     }
 
