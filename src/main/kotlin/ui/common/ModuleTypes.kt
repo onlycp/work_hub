@@ -20,7 +20,8 @@ enum class ModuleType(
     EXPENSE("报销", Icons.Default.Receipt),
     LOGS("日志", Icons.Default.Description),
     PROFILE("个人", Icons.Default.AccountCircle),
-    SETTINGS("设置", Icons.Default.Settings)
+    SETTINGS("设置", Icons.Default.Settings),
+    HUBLINK("代理", Icons.Default.VpnLock)
 }
 
 /**

@@ -7,6 +7,7 @@ import service.*
 import theme.*
 import ui.common.*
 import ui.ops.*
+import ui.ops.openTerminalWithSSH
 import ui.SSHConfigDialog
 import utils.Logger
 import java.util.UUID
@@ -41,6 +42,10 @@ fun App(onLogout: () -> Unit = {}) {
     // 打开的主机tab管理（需要在startAutoReconnect和onSSHConnect之前定义）
     var openedHostTabs by remember { mutableStateOf<List<String>>(emptyList()) }
     var selectedHostTabId by remember { mutableStateOf<String?>(null) }
+
+    // HubLink代理管理
+    var hublinkConfigs by remember { mutableStateOf<List<HubLinkConfig>>(emptyList()) }
+    var hublinkStates by remember { mutableStateOf<Map<String, HubLinkState>>(emptyMap()) }
 
     val onAutoReconnectChanged = { configId: String, enabled: Boolean ->
         autoReconnectEnabled = autoReconnectEnabled + (configId to enabled)
@@ -192,6 +197,73 @@ fun App(onLogout: () -> Unit = {}) {
         }
     }
 
+    // HubLink代理连接/断开操作
+    val onHubLinkConnect = { configId: String ->
+        val config = hublinkConfigs.find { it.id == configId }
+        if (config != null) {
+            Logger.info("用户尝试连接HubLink代理: ${config.name} (${config.host}:${config.port})")
+            scope.launch {
+                try {
+                    statusMessage = "正在连接代理 ${config.name}..."
+                    val clientManager = HubLinkManager.getClientManager(configId)
+                    if (clientManager != null) {
+                        val result = clientManager.connect()
+                        if (result.isSuccess) {
+                            hublinkStates = hublinkStates + (configId to clientManager.state.value)
+                            statusMessage = "已连接到代理 ${config.name}"
+                            Logger.info("HubLink代理连接成功: ${config.name}")
+                        } else {
+                            Logger.error("HubLink代理连接失败: ${config.name} - ${result.exceptionOrNull()?.message}")
+                            statusMessage = "连接失败: ${result.exceptionOrNull()?.message}"
+                        }
+                    }
+                } catch (e: Exception) {
+                    Logger.error("HubLink代理连接异常: ${config.name} - ${e.message}", e)
+                    statusMessage = "连接失败: ${e.message}"
+                }
+            }
+        }
+    }
+
+    val onHubLinkDisconnect = { configId: String ->
+        val config = hublinkConfigs.find { it.id == configId }
+        if (config != null) {
+            Logger.info("用户断开HubLink代理连接: ${config.name}")
+            scope.launch {
+                try {
+                    val clientManager = HubLinkManager.getClientManager(configId)
+                    clientManager?.disconnect()
+                    hublinkStates = hublinkStates + (configId to HubLinkState.Disconnected)
+                    statusMessage = "已断开代理连接 ${config.name}"
+                    Logger.info("HubLink代理连接已断开: ${config.name}")
+                } catch (e: Exception) {
+                    Logger.error("HubLink代理断开连接异常: ${config.name} - ${e.message}", e)
+                    statusMessage = "断开连接失败: ${e.message}"
+                }
+            }
+        }
+    }
+
+    val onSetSystemProxy: (String, Int, Boolean) -> Unit = { host, port, enable ->
+        Logger.info("用户${if (enable) "启用" else "禁用"}系统代理: $host:$port")
+        scope.launch {
+            try {
+                statusMessage = "${if (enable) "启用" else "禁用"}系统代理..."
+                val result = SystemProxySetter.setProxy(host, port, enable)
+                if (result.isSuccess) {
+                    statusMessage = "系统代理已${if (enable) "启用" else "禁用"}"
+                    Logger.info("系统代理设置成功: ${if (enable) "启用" else "禁用"} $host:$port")
+                } else {
+                    statusMessage = "系统代理设置失败: ${result.exceptionOrNull()?.message}"
+                    Logger.error("系统代理设置失败: ${result.exceptionOrNull()?.message}")
+                }
+            } catch (e: Exception) {
+                statusMessage = "系统代理设置异常: ${e.message}"
+                Logger.error("系统代理设置异常: ${e.message}", e)
+            }
+        }
+    }
+
     // 运维界面状态
     var selectedOpsTab by remember { mutableStateOf(OpsDrawerTab.COMMANDS) }
     val showOpsDrawerState = remember { mutableStateOf(false) }
@@ -245,8 +317,16 @@ fun App(onLogout: () -> Unit = {}) {
             // 确保数据被正确加载
             sshConfigs = SSHConfigManager.getAllConfigs()
             Logger.info("SSH配置加载完成，共 ${sshConfigs.size} 个配置")
+
+            // 加载HubLink配置
+            HubLinkManager.setCurrentUser(CurrentUserManager.getCurrentUserId())
+            hublinkConfigs = HubLinkManager.getAllConfigs()
+            Logger.info("HubLink配置加载完成，共 ${hublinkConfigs.size} 个配置")
+
+            // 初始化首页配置管理器
+            IndexConfigManager.setCurrentUser(CurrentUserManager.getCurrentUserId())
         } catch (e: Exception) {
-            Logger.error("SSH配置加载失败: ${e.message}", e)
+            Logger.error("数据加载失败: ${e.message}", e)
             statusMessage = "数据加载失败: ${e.message}"
         }
     }
@@ -303,11 +383,16 @@ fun App(onLogout: () -> Unit = {}) {
                             // 重新加载SSH配置
                             sshConfigs = SSHConfigManager.getAllConfigs()
 
+                            // 重新加载HubLink配置
+                            HubLinkManager.setCurrentUser(currentUser)
+                            hublinkConfigs = HubLinkManager.getAllConfigs()
+
                             // 重新初始化各个管理器
                             SSHConfigManager.setCurrentUser(currentUser)
                             KeyManager.setCurrentUser(currentUser)
                             CursorRuleManager.setCurrentUser(currentUser)
                             MemberManager.setCurrentUser(currentUser)
+                            IndexConfigManager.setCurrentUser(currentUser)
                             ExpenseManager.setCurrentUser(currentUser)
 
                             statusMessage = "数据同步完成"
@@ -369,6 +454,8 @@ fun App(onLogout: () -> Unit = {}) {
                     statusMessage = statusMessage,
                     onStatusMessage = { message -> statusMessage = message },
                     sshConfigs = sshConfigs,
+                    hublinkConfigs = hublinkConfigs,
+                    hublinkStates = hublinkStates,
                     selectedSSHConfigId = selectedSSHConfigId,
                     selectedOpsTab = selectedOpsTab,
                     showOpsDrawer = showOpsDrawer,
@@ -437,6 +524,69 @@ fun App(onLogout: () -> Unit = {}) {
                     onEditingCommandRule = onEditingCommandRule,
                     onExecutingCommandRule = onExecutingCommandRule,
                     onAutoReconnectChanged = onAutoReconnectChanged,
+                    onHubLinkConnect = onHubLinkConnect,
+                    onHubLinkDisconnect = onHubLinkDisconnect,
+                    onSetSystemProxy = onSetSystemProxy,
+                    onShowHostDetails = { configId ->
+                        // 跳转到主机的详情页面（切换到运维工具模块并创建主机标签页）
+                        selectedModule = ModuleType.OPS
+                        onOpenHostTab(configId)
+                        selectedSSHConfigId = configId
+                        statusMessage = "已切换到主机详情"
+                        Logger.info("用户从首页跳转到主机详情: $configId")
+                    },
+                    onOpenHostTerminal = { configId ->
+                        // 打开对应主机的终端连接
+                        scope.launch {
+                            val config = sshConfigs.find { it.id == configId }
+                            if (config != null) {
+                                val sshConfig = SSHConfig.fromSSHConfigData(config)
+                                val keyPathOrContent = sshConfig.privateKeyPath.trim()
+                                val isKeyContent = keyPathOrContent.startsWith("-----BEGIN") && keyPathOrContent.contains("PRIVATE KEY-----")
+
+                                val authType = when {
+                                    isKeyContent -> {
+                                        if (sshConfig.privateKeyPassphrase.isNotEmpty()) "key_with_passphrase" else "key"
+                                    }
+                                    sshConfig.password.isNotEmpty() -> "password"
+                                    else -> "none"
+                                }
+
+                                // 根据认证方式显示不同的提示信息
+                                when (authType) {
+                                    "password" -> {
+                                        statusMessage = "密码已拷贝到剪贴板，请在终端中粘贴使用"
+                                    }
+                                    "key_with_passphrase" -> {
+                                        statusMessage = "密钥密码短语已拷贝到剪贴板，请在终端中粘贴使用"
+                                    }
+                                    "key" -> {
+                                        statusMessage = "正在打开终端连接..."
+                                    }
+                                    else -> {
+                                        statusMessage = "正在打开终端连接..."
+                                    }
+                                }
+
+                                // 调用OpsMainContent中的终端打开函数
+                                val result = openTerminalWithSSH(config)
+                                if (result.isFailure) {
+                                    val errorMessage = result.exceptionOrNull()?.message ?: "打开终端失败"
+                                    statusMessage = "终端连接失败: $errorMessage"
+                                    println("❌ 打开终端失败: $errorMessage")
+                                } else {
+                                    if (authType == "password" || authType == "key_with_passphrase") {
+                                        statusMessage = "终端已打开，密码已在剪贴板中，请在SSH提示时粘贴"
+                                    } else {
+                                        statusMessage = "终端连接成功"
+                                    }
+                                    println("✅ 正在打开终端连接到 ${config.name}")
+                                }
+                            } else {
+                                statusMessage = "未找到主机配置"
+                            }
+                        }
+                    },
                     onLogout = {
                         Logger.info("用户执行退出登录操作")
                         // 退出登录逻辑
@@ -590,7 +740,7 @@ fun App(onLogout: () -> Unit = {}) {
                 commandRule = currentExecutingRule,
                 onDismiss = { executingCommandRule = null }
             )
-        }
-
     }
+}
+
 }

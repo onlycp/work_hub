@@ -1023,7 +1023,8 @@ object GitDataManager {
             sshConfigs = getAllMergedSSHConfigs(),
             keys = getAllMergedKeys(),
             cursorRules = getAllMergedCursorRules(),
-            members = getAllMergedMembers()
+            members = getAllMergedMembers(),
+            hublinkConfigs = getAllMergedHubLinkConfigs()
         )
     }
 
@@ -1041,6 +1042,7 @@ object GitDataManager {
             saveDataToFile(userDir, "keys.json", data.keys)
             saveDataToFile(userDir, "cursor_rules.json", data.cursorRules)
             saveDataToFile(userDir, "members.json", data.members)
+            saveDataToFile(userDir, "hublink_configs.json", data.hublinkConfigs)
 
             // 如果用户目录是Git仓库，自动提交更改
             val userGitDir = File(userDir, ".git")
@@ -1265,7 +1267,8 @@ object GitDataManager {
             sshConfigs = loadDataFromFile(dir, "ssh_configs.json"),
             keys = loadDataFromFile(dir, "keys.json"),
             cursorRules = loadDataFromFile(dir, "cursor_rules.json"),
-            members = loadDataFromFile(dir, "members.json")
+            members = loadDataFromFile(dir, "members.json"),
+            hublinkConfigs = loadDataFromFile(dir, "hublink_configs.json")
         )
     }
 
@@ -1310,6 +1313,13 @@ object GitDataManager {
             ?.distinctBy { it.id }
             ?: emptyList()
     }
+
+    private fun getAllMergedHubLinkConfigs(): List<HubLinkConfig> {
+        return mergedDir.listFiles()
+            ?.flatMap { userDir -> loadDataFromFile<HubLinkConfig>(userDir, "hublink_configs.json") }
+            ?.distinctBy { it.id }
+            ?: emptyList()
+    }
 }
 
 /**
@@ -1319,7 +1329,8 @@ data class UserData(
     val sshConfigs: List<SSHConfigData> = emptyList(),
     val keys: List<KeyData> = emptyList(),
     val cursorRules: List<CursorRuleData> = emptyList(),
-    val members: List<MemberData> = emptyList()
+    val members: List<MemberData> = emptyList(),
+    val hublinkConfigs: List<HubLinkConfig> = emptyList()
 )
 
 /**
@@ -1329,5 +1340,6 @@ data class MergedData(
     val sshConfigs: List<SSHConfigData> = emptyList(),
     val keys: List<KeyData> = emptyList(),
     val cursorRules: List<CursorRuleData> = emptyList(),
-    val members: List<MemberData> = emptyList()
+    val members: List<MemberData> = emptyList(),
+    val hublinkConfigs: List<HubLinkConfig> = emptyList()
 )

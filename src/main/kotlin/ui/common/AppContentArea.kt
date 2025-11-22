@@ -10,6 +10,7 @@ import theme.AppDimensions
 import ui.cursor.*
 import ui.expense.*
 import ui.home.*
+import ui.hublink.*
 import ui.keys.*
 import ui.logs.*
 import ui.members.*
@@ -26,6 +27,8 @@ fun ContentArea(
     statusMessage: String,
     onStatusMessage: (String) -> Unit,
     sshConfigs: List<SSHConfigData> = emptyList(),
+    hublinkConfigs: List<data.HubLinkConfig> = emptyList(),
+    hublinkStates: Map<String, data.HubLinkState> = emptyMap(),
     selectedSSHConfigId: String? = null,
     selectedOpsTab: OpsDrawerTab = OpsDrawerTab.COMMANDS,
     showOpsDrawer: Boolean = false,
@@ -61,6 +64,11 @@ fun ContentArea(
     onEditingCommandRule: (data.CommandRuleData?) -> Unit = {},
     onExecutingCommandRule: (data.CommandRuleData?) -> Unit = {},
     onAutoReconnectChanged: (String, Boolean) -> Unit = { _, _ -> },
+    onHubLinkConnect: (String) -> Unit = {},
+    onHubLinkDisconnect: (String) -> Unit = {},
+    onSetSystemProxy: (String, Int, Boolean) -> Unit = { _, _, _ -> },
+    onShowHostDetails: (String) -> Unit = {},
+    onOpenHostTerminal: (String) -> Unit = {},
     onLogout: () -> Unit = {}
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
@@ -77,7 +85,20 @@ fun ContentArea(
                         .padding(AppDimensions.PaddingScreen)
                 ) {
                     when (selectedModule) {
-                        ModuleType.HOME -> HomeContent()
+                        ModuleType.HOME -> HomeContent(
+                            hublinkConfigs = hublinkConfigs,
+                            hublinkStates = hublinkStates,
+                            sshConfigs = sshConfigs,
+                            sshConnectionStates = sshConnectionStates.mapValues { it.value },
+                            onHubLinkConnect = onHubLinkConnect,
+                            onHubLinkDisconnect = onHubLinkDisconnect,
+                            onSetSystemProxy = onSetSystemProxy,
+                            onSSHConnect = onSSHConfigConnect,
+                            onSSHDisconnect = onSSHConfigDisconnect,
+                            onShowHostDetails = onShowHostDetails,
+                            onOpenHostTerminal = onOpenHostTerminal,
+                            onStatusMessage = onStatusMessage
+                        )
                         ModuleType.OPS -> OpsContent(
                             sshConfigs = sshConfigs,
                             selectedSSHConfigId = selectedSSHConfigId,
@@ -115,6 +136,7 @@ fun ContentArea(
                             onEditingCommandRule = onEditingCommandRule,
                             onExecutingCommandRule = onExecutingCommandRule,
                             onAutoReconnectChanged = onAutoReconnectChanged,
+                            onOpenHostTerminal = onOpenHostTerminal,
                             onStatusMessage = onStatusMessage
                         )
                         ModuleType.KEYS -> KeysContent(onStatusMessage = onStatusMessage)
@@ -124,6 +146,7 @@ fun ContentArea(
                         ModuleType.LOGS -> LogsContent()
                         ModuleType.PROFILE -> ProfileContent(onLogout = onLogout)
                         ModuleType.SETTINGS -> SettingsContent()
+                        ModuleType.HUBLINK -> HubLinkContent(onBack = {})
                     }
                 }
             }

@@ -72,6 +72,7 @@ fun OpsContent(
     onEditingCommandRule: (data.CommandRuleData?) -> Unit,
     onExecutingCommandRule: (data.CommandRuleData?) -> Unit,
     onAutoReconnectChanged: (String, Boolean) -> Unit,
+    onOpenHostTerminal: (String) -> Unit = {},
     onStatusMessage: (String) -> Unit
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
@@ -160,6 +161,7 @@ fun OpsContent(
                                 onEditingCommandRule = onEditingCommandRule,
                                 onExecutingCommandRule = onExecutingCommandRule,
                                 onAutoReconnectChanged = onAutoReconnectChanged,
+                                onOpenHostTerminal = onOpenHostTerminal,
                                 onStatusMessage = onStatusMessage
                             )
                         } else {

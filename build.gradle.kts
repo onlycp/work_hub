@@ -34,6 +34,7 @@ dependencies {
     // (in a separate module for demo project and in testMain).
     // With compose.desktop.common you will also lose @Preview functionality
     implementation(compose.desktop.currentOs)
+    implementation(compose.material3)
     implementation(compose.materialIconsExtended)  // 扩展图标库
 
     // Coroutines for asynchronous operations
@@ -52,6 +53,7 @@ dependencies {
 
     // JGit for Git operations - 使用较新版本，可能修复了 JMX 问题
     implementation("org.eclipse.jgit:org.eclipse.jgit:6.8.0.202311291450-r")
+
 }
 
 compose.desktop {

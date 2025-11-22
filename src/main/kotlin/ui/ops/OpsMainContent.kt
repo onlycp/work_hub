@@ -48,10 +48,62 @@ fun OpsMainContent(
     onEditingCommandRule: (data.CommandRuleData?) -> Unit = {},
     onExecutingCommandRule: (data.CommandRuleData?) -> Unit = {},
     onAutoReconnectChanged: (String, Boolean) -> Unit = { _, _ -> },
+    onOpenHostTerminal: (String) -> Unit = {},
     onStatusMessage: (String) -> Unit = {}
 ) {
     val scope = rememberCoroutineScope()
     val isConnected = sshConnectionStates[config.id] == true
+
+    // 默认的终端打开逻辑
+    val defaultOpenTerminal: (String) -> Unit = { configId ->
+        scope.launch {
+            // 检查认证方式并提供相应的用户提示
+            val sshConfig = SSHConfig.fromSSHConfigData(config)
+            val keyPathOrContent = sshConfig.privateKeyPath.trim()
+            val isKeyContent = keyPathOrContent.startsWith("-----BEGIN") && keyPathOrContent.contains("PRIVATE KEY-----")
+
+            val authType = when {
+                isKeyContent -> {
+                    if (sshConfig.privateKeyPassphrase.isNotEmpty()) "key_with_passphrase" else "key"
+                }
+                sshConfig.password.isNotEmpty() -> "password"
+                else -> "none"
+            }
+
+            // 根据认证方式显示不同的提示信息
+            when (authType) {
+                "password" -> {
+                    onStatusMessage("密码已拷贝到剪贴板，请在终端中粘贴使用")
+                }
+                "key_with_passphrase" -> {
+                    onStatusMessage("密钥密码短语已拷贝到剪贴板，请在终端中粘贴使用")
+                }
+                "key" -> {
+                    onStatusMessage("正在打开终端连接...")
+                }
+                else -> {
+                    onStatusMessage("正在打开终端连接...")
+                }
+            }
+
+            val result = openTerminalWithSSH(config)
+            if (result.isFailure) {
+                val errorMessage = result.exceptionOrNull()?.message ?: "打开终端失败"
+                onStatusMessage("终端连接失败: $errorMessage")
+                println("❌ 打开终端失败: $errorMessage")
+            } else {
+                if (authType == "password" || authType == "key_with_passphrase") {
+                    onStatusMessage("终端已打开，密码已在剪贴板中，请在SSH提示时粘贴")
+                } else {
+                    onStatusMessage("终端连接成功")
+                }
+                println("✅ 正在打开终端连接到 ${config.name}")
+            }
+        }
+    }
+
+    // 使用提供的回调或默认实现
+    val openTerminalCallback = if (onOpenHostTerminal != {}) onOpenHostTerminal else defaultOpenTerminal
 
     // 定时更新连接时间显示
     var currentTime by remember { mutableStateOf(System.currentTimeMillis()) }
@@ -213,50 +265,7 @@ fun OpsMainContent(
                         // 终端按钮 - 随时可用，不依赖连接状态
                         OutlinedButton(
                             onClick = {
-                                scope.launch {
-                                    // 检查认证方式并提供相应的用户提示
-                                    val sshConfig = SSHConfig.fromSSHConfigData(config)
-                                    val keyPathOrContent = sshConfig.privateKeyPath.trim()
-                                    val isKeyContent = keyPathOrContent.startsWith("-----BEGIN") && keyPathOrContent.contains("PRIVATE KEY-----")
-
-                                    val authType = when {
-                                        isKeyContent -> {
-                                            if (sshConfig.privateKeyPassphrase.isNotEmpty()) "key_with_passphrase" else "key"
-                                        }
-                                        sshConfig.password.isNotEmpty() -> "password"
-                                        else -> "none"
-                                    }
-
-                                    // 根据认证方式显示不同的提示信息
-                                    when (authType) {
-                                        "password" -> {
-                                            onStatusMessage("密码已拷贝到剪贴板，请在终端中粘贴使用")
-                                        }
-                                        "key_with_passphrase" -> {
-                                            onStatusMessage("密钥密码短语已拷贝到剪贴板，请在终端中粘贴使用")
-                                        }
-                                        "key" -> {
-                                            onStatusMessage("正在打开终端连接...")
-                                        }
-                                        else -> {
-                                            onStatusMessage("正在打开终端连接...")
-                                        }
-                                    }
-
-                                    val result = openTerminalWithSSH(config)
-                                    if (result.isFailure) {
-                                        val errorMessage = result.exceptionOrNull()?.message ?: "打开终端失败"
-                                        onStatusMessage("终端连接失败: $errorMessage")
-                                        println("❌ 打开终端失败: $errorMessage")
-                                    } else {
-                                        if (authType == "password" || authType == "key_with_passphrase") {
-                                            onStatusMessage("终端已打开，密码已在剪贴板中，请在SSH提示时粘贴")
-                                        } else {
-                                            onStatusMessage("终端连接成功")
-                                        }
-                                        println("✅ 正在打开终端连接到 ${config.name}")
-                                    }
-                                }
+                                openTerminalCallback(config.id)
                             },
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                         ) {
@@ -465,7 +474,7 @@ fun OpsMainContent(
 /**
  * 根据操作系统自动选择终端并打开SSH连接
  */
-private suspend fun openTerminalWithSSH(config: SSHConfigData): Result<Unit> {
+internal suspend fun openTerminalWithSSH(config: SSHConfigData): Result<Unit> {
     return withContext(Dispatchers.IO) {
         var tempKeyFile: File? = null
         var scriptFile: File? = null

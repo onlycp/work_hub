@@ -74,150 +74,156 @@ fun SSHConfigDialog(
                     modifier = Modifier.padding(bottom = AppDimensions.SpaceL)
                 )
 
-                // 连接名称
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("连接名称", style = AppTypography.BodySmall) },
+                // 基本信息 - 两列布局
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    textStyle = AppTypography.BodySmall.copy(fontSize = 14.sp),
-                    colors = TextFieldDefaults.outlinedTextFieldColors(
-                        textColor = AppColors.TextPrimary,
-                        backgroundColor = AppColors.Surface
-                    )
-                )
-
-                Spacer(modifier = Modifier.height(AppDimensions.SpaceS))
-
-                // 分组
-                OutlinedTextField(
-                    value = group,
-                    onValueChange = { group = it },
-                    label = { Text("分组", style = AppTypography.BodySmall) },
-                    placeholder = { Text("如: 生产环境、测试环境", style = AppTypography.BodySmall) },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    textStyle = AppTypography.BodySmall.copy(fontSize = 14.sp),
-                    colors = TextFieldDefaults.outlinedTextFieldColors(
-                        textColor = AppColors.TextPrimary,
-                        backgroundColor = AppColors.Surface
-                    )
-                )
-
-                Spacer(modifier = Modifier.height(AppDimensions.SpaceS))
-
-                // 主机
-                OutlinedTextField(
-                    value = host,
-                    onValueChange = { host = it },
-                    label = { Text("主机地址", style = AppTypography.BodySmall) },
-                    placeholder = { Text("例如: 192.168.1.100", style = AppTypography.BodySmall) },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    textStyle = AppTypography.BodySmall.copy(fontSize = 14.sp),
-                    colors = TextFieldDefaults.outlinedTextFieldColors(
-                        textColor = AppColors.TextPrimary,
-                        backgroundColor = AppColors.Surface
-                    )
-                )
-
-                Spacer(modifier = Modifier.height(AppDimensions.SpaceS))
-
-                // 端口
-                OutlinedTextField(
-                    value = port,
-                    onValueChange = { port = it },
-                    label = { Text("端口", style = AppTypography.BodySmall) },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    textStyle = AppTypography.BodySmall.copy(fontSize = 14.sp),
-                    colors = TextFieldDefaults.outlinedTextFieldColors(
-                        textColor = AppColors.TextPrimary,
-                        backgroundColor = AppColors.Surface
-                    )
-                )
-
-                Spacer(modifier = Modifier.height(AppDimensions.SpaceS))
-
-                // 用户名
-                OutlinedTextField(
-                    value = username,
-                    onValueChange = { username = it },
-                    label = { Text("用户名", style = AppTypography.BodySmall) },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    textStyle = AppTypography.BodySmall.copy(fontSize = 14.sp),
-                    colors = TextFieldDefaults.outlinedTextFieldColors(
-                        textColor = AppColors.TextPrimary,
-                        backgroundColor = AppColors.Surface
-                    )
-                )
-
-                Spacer(modifier = Modifier.height(AppDimensions.SpaceS))
-
-                // 认证方式选择
-                Column {
-                    Text(
-                        text = "认证方式",
-                        style = AppTypography.BodySmall,
-                        color = AppColors.TextPrimary,
-                        fontWeight = FontWeight.Medium
-                    )
-
-                    Spacer(modifier = Modifier.height(AppDimensions.SpaceS))
-
-                    // 第一行：使用密钥 和 密码认证
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            RadioButton(
-                                selected = authType == 0,
-                                onClick = {
-                                    authType = 0
-                                    selectedKeyId = availableKeys.firstOrNull()?.id
-                                }
+                    horizontalArrangement = Arrangement.spacedBy(AppDimensions.SpaceM)
+                ) {
+                    // 左侧列
+                    Column(modifier = Modifier.weight(1f)) {
+                        // 连接名称
+                        OutlinedTextField(
+                            value = name,
+                            onValueChange = { name = it },
+                            label = { Text("连接名称", style = AppTypography.BodySmall) },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            textStyle = AppTypography.BodySmall.copy(fontSize = 14.sp),
+                            colors = TextFieldDefaults.outlinedTextFieldColors(
+                                textColor = AppColors.TextPrimary,
+                                backgroundColor = AppColors.Surface
                             )
-                            Text("使用密钥", style = AppTypography.BodySmall)
-                        }
+                        )
 
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            RadioButton(
-                                selected = authType == 1,
-                                onClick = {
-                                    authType = 1
-                                    selectedKeyId = null
-                                }
+                        Spacer(modifier = Modifier.height(AppDimensions.SpaceS))
+
+                        // 分组
+                        OutlinedTextField(
+                            value = group,
+                            onValueChange = { group = it },
+                            label = { Text("分组", style = AppTypography.BodySmall) },
+                            placeholder = { Text("如: 生产环境、测试环境", style = AppTypography.BodySmall) },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            textStyle = AppTypography.BodySmall.copy(fontSize = 14.sp),
+                            colors = TextFieldDefaults.outlinedTextFieldColors(
+                                textColor = AppColors.TextPrimary,
+                                backgroundColor = AppColors.Surface
                             )
-                            Text("密码认证", style = AppTypography.BodySmall)
-                        }
+                        )
                     }
 
-                    // 第二行：私钥认证
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            RadioButton(
-                                selected = authType == 2,
-                                onClick = {
-                                    authType = 2
-                                    selectedKeyId = null
-                                }
+                    // 右侧列
+                    Column(modifier = Modifier.weight(1f)) {
+                        // 主机地址
+                        OutlinedTextField(
+                            value = host,
+                            onValueChange = { host = it },
+                            label = { Text("主机地址", style = AppTypography.BodySmall) },
+                            placeholder = { Text("例如: 192.168.1.100", style = AppTypography.BodySmall) },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            textStyle = AppTypography.BodySmall.copy(fontSize = 14.sp),
+                            colors = TextFieldDefaults.outlinedTextFieldColors(
+                                textColor = AppColors.TextPrimary,
+                                backgroundColor = AppColors.Surface
                             )
-                            Text("私钥认证", style = AppTypography.BodySmall)
+                        )
+
+                        Spacer(modifier = Modifier.height(AppDimensions.SpaceS))
+
+                        // 端口
+                        OutlinedTextField(
+                            value = port,
+                            onValueChange = { port = it },
+                            label = { Text("端口", style = AppTypography.BodySmall) },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            textStyle = AppTypography.BodySmall.copy(fontSize = 14.sp),
+                            colors = TextFieldDefaults.outlinedTextFieldColors(
+                                textColor = AppColors.TextPrimary,
+                                backgroundColor = AppColors.Surface
+                            )
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(AppDimensions.SpaceS))
+
+                // 用户名和认证方式 - 两列布局
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(AppDimensions.SpaceM)
+                ) {
+                    // 左侧列 - 用户名
+                    Column(modifier = Modifier.weight(1f)) {
+                        OutlinedTextField(
+                            value = username,
+                            onValueChange = { username = it },
+                            label = { Text("用户名", style = AppTypography.BodySmall) },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            textStyle = AppTypography.BodySmall.copy(fontSize = 14.sp),
+                            colors = TextFieldDefaults.outlinedTextFieldColors(
+                                textColor = AppColors.TextPrimary,
+                                backgroundColor = AppColors.Surface
+                            )
+                        )
+                    }
+
+                    // 右侧列 - 认证方式选择
+                    Column(modifier = Modifier.weight(1f)) {
+                        // 认证方式下拉选择器
+                        var authDropdownExpanded by remember { mutableStateOf(false) }
+                        val authOptions = listOf(
+                            "使用密钥" to 0,
+                            "密码认证" to 1,
+                            "私钥认证" to 2
+                        )
+                        val selectedAuthOption = authOptions.find { it.second == authType }
+
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            OutlinedTextField(
+                                value = selectedAuthOption?.first ?: "选择认证方式",
+                                onValueChange = {},
+                                label = { Text("认证方式", style = AppTypography.BodySmall) },
+                                modifier = Modifier.fillMaxWidth(),
+                                readOnly = true,
+                                trailingIcon = {
+                                    IconButton(onClick = { authDropdownExpanded = !authDropdownExpanded }) {
+                                        androidx.compose.material.Icon(
+                                            imageVector = androidx.compose.material.icons.Icons.Default.ArrowDropDown,
+                                            contentDescription = "展开"
+                                        )
+                                    }
+                                },
+                                textStyle = AppTypography.BodySmall.copy(fontSize = 14.sp),
+                                colors = TextFieldDefaults.outlinedTextFieldColors(
+                                    textColor = AppColors.TextPrimary,
+                                    backgroundColor = AppColors.Surface
+                                )
+                            )
+
+                            androidx.compose.material.DropdownMenu(
+                                expanded = authDropdownExpanded,
+                                onDismissRequest = { authDropdownExpanded = false },
+                                modifier = Modifier.widthIn(min = 200.dp)
+                            ) {
+                                authOptions.forEach { (name, type) ->
+                                    androidx.compose.material.DropdownMenuItem(
+                                        onClick = {
+                                            authType = type
+                                            selectedKeyId = if (type == 0) availableKeys.firstOrNull()?.id else null
+                                            authDropdownExpanded = false
+                                        }
+                                    ) {
+                                        Text(
+                                            text = name,
+                                            style = AppTypography.BodySmall
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -286,24 +292,7 @@ fun SSHConfigDialog(
                     }
 
                     1 -> {
-                        // 密码认证 - 显示用户名和密码字段
-                        // 用户名（如果不是使用密钥，则显示）
-                        OutlinedTextField(
-                            value = username,
-                            onValueChange = { username = it },
-                            label = { Text("用户名", style = AppTypography.BodySmall) },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            textStyle = AppTypography.BodySmall.copy(fontSize = 14.sp),
-                            colors = TextFieldDefaults.outlinedTextFieldColors(
-                                textColor = AppColors.TextPrimary,
-                                backgroundColor = AppColors.Surface
-                            )
-                        )
-
-                        Spacer(modifier = Modifier.height(AppDimensions.SpaceS))
-
-                        // 密码
+                        // 密码认证 - 显示密码字段
                         OutlinedTextField(
                             value = password,
                             onValueChange = { password = it },
@@ -319,24 +308,7 @@ fun SSHConfigDialog(
                     }
 
                     2 -> {
-                        // 私钥认证 - 显示用户名和私钥字段
-                        // 用户名（如果不是使用密钥，则显示）
-                        OutlinedTextField(
-                            value = username,
-                            onValueChange = { username = it },
-                            label = { Text("用户名", style = AppTypography.BodySmall) },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            textStyle = AppTypography.BodySmall.copy(fontSize = 14.sp),
-                            colors = TextFieldDefaults.outlinedTextFieldColors(
-                                textColor = AppColors.TextPrimary,
-                                backgroundColor = AppColors.Surface
-                            )
-                        )
-
-                        Spacer(modifier = Modifier.height(AppDimensions.SpaceS))
-
-                        // 私钥认证设置
+                        // 私钥认证 - 显示私钥字段
                         Column(modifier = Modifier.fillMaxWidth()) {
                             // 私钥路径
                             OutlinedTextField(
@@ -379,7 +351,6 @@ fun SSHConfigDialog(
                             )
                         }
                     }
-
                 }
 
                 Spacer(modifier = Modifier.height(AppDimensions.SpaceM))
