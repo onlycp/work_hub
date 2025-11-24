@@ -31,7 +31,36 @@ class HubLinkClientManager(private val config: HubLinkConfig) {
     suspend fun connect(): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             _state.value = HubLinkState.Connecting
-            Logger.info("HubLink: 开始连接 ${config.name} (${config.host}:${config.port})")
+
+            // 输出详细的连接参数日志
+            Logger.info("=== HubLink 连接参数详情 ===")
+            Logger.info("配置名称: ${config.name}")
+            Logger.info("服务器地址: ${config.host}:${config.port}")
+            Logger.info("本地代理端口: ${if (config.localPort > 0) config.localPort else "自动分配"}")
+            Logger.info("传输类型: ${when (config.transport) {
+                HubLinkTransportType.DIRECT -> "直接TCP连接"
+                HubLinkTransportType.MQTT -> "MQTT代理"
+            }}")
+            Logger.info("预共享密钥: ${config.psk}")
+            Logger.info("自动重连: ${config.autoReconnect}")
+            Logger.info("最大重试次数: ${config.maxRetries}")
+            Logger.info("基础重试间隔: ${config.baseRetryDelay}ms")
+            Logger.info("最大重试间隔: ${config.maxRetryDelay}ms")
+            Logger.info("流量混淆: ${config.obfs ?: "无"}")
+            if (config.obfs != null && config.obfsHost != null) {
+                Logger.info("混淆主机: ${config.obfsHost}")
+            }
+            Logger.info("配置共享: ${config.isShared}")
+
+            config.mqttConfig?.let { mqtt ->
+                Logger.info("MQTT服务器: ${mqtt.mqttHost}:${mqtt.mqttPort}")
+                Logger.info("MQTT SSL: ${mqtt.useSSL}")
+                Logger.info("MQTT客户端ID: ${mqtt.clientId}")
+                Logger.info("MQTT服务端ID: ${mqtt.serverId}")
+                Logger.info("MQTT认证: ${mqtt.username?.let { "已配置" } ?: "无"}")
+            }
+
+            Logger.info("=== 开始连接 ${config.name} ===")
 
             // 创建传输层
             transport = when (config.transport) {
@@ -57,9 +86,9 @@ class HubLinkClientManager(private val config: HubLinkConfig) {
                 // 自动分配可用端口
                 findAvailablePort()
             }
-            // TODO: 暂时注释掉，避免编译错误
-            // localProxyServer = LocalProxyServer(this, proxyPort)
-            // localProxyServer?.start()
+            // 启动本地代理服务器
+            localProxyServer = LocalProxyServer(this@HubLinkClientManager, proxyPort)
+            localProxyServer?.start()
 
             // 启动代理转发协程
             proxyJob = CoroutineScope(Dispatchers.IO).launch {
@@ -70,7 +99,16 @@ class HubLinkClientManager(private val config: HubLinkConfig) {
             _state.value = HubLinkState.Connected(proxyPort, config.host, config.port)
             reconnectManager.reset()
 
-            Logger.info("HubLink: 连接成功 ${config.name}, 本地代理端口: $proxyPort")
+            Logger.info("=== HubLink 连接成功 ===")
+            Logger.info("配置名称: ${config.name}")
+            Logger.info("远程服务器: ${config.host}:${config.port}")
+            Logger.info("本地代理端口: $proxyPort")
+            Logger.info("传输类型: ${when (config.transport) {
+                HubLinkTransportType.DIRECT -> "直接TCP连接"
+                HubLinkTransportType.MQTT -> "MQTT代理"
+            }}")
+            Logger.info("流量混淆: ${config.obfs ?: "无"}")
+            Logger.info("连接状态: 已建立，可开始代理转发")
             Result.success(Unit)
 
         } catch (e: Exception) {
@@ -90,39 +128,54 @@ class HubLinkClientManager(private val config: HubLinkConfig) {
      * 断开连接
      */
     suspend fun disconnect() {
-        Logger.info("HubLink: 断开连接 ${config.name}")
+        Logger.info("=== HubLink 断开连接 ===")
+        Logger.info("配置名称: ${config.name}")
+        Logger.info("远程服务器: ${config.host}:${config.port}")
+        Logger.info("本地代理端口: ${proxyPort ?: "未分配"}")
 
         // 停止重连
         reconnectManager.stopReconnect()
+        Logger.info("自动重连: 已停止")
 
         // 停止代理转发
         proxyJob?.cancel()
         proxyJob = null
+        Logger.info("代理转发: 已停止")
 
         // 停止本地代理服务器
         localProxyServer?.stop()
         localProxyServer = null
+        Logger.info("本地代理服务器: 已停止")
 
         // 断开传输连接
         protocol = null
         transport?.disconnect()
         transport = null
+        Logger.info("传输连接: 已断开")
 
         _state.value = HubLinkState.Disconnected
+        Logger.info("连接状态: 已完全断开")
     }
 
     /**
-     * 启动代理转发
+     * 启动代理转发监控
      */
     private suspend fun startProxyForwarding() = withContext(Dispatchers.IO) {
         while (isActive) {
             try {
-                // 这里应该从本地代理服务器接收请求并转发
-                // 暂时保持连接活跃
-                delay(1000)
+                // 监控本地代理服务器状态
+                // 如果LocalProxyServer检测到连接异常，会通过forwardRequest抛出异常
+                delay(5000) // 每5秒检查一次状态
+
+                // 检查transport连接状态
+                if (transport?.isConnected() == false) {
+                    Logger.warn("HubLink: 检测到连接断开")
+                    throw Exception("Connection lost")
+                }
+
             } catch (e: Exception) {
                 if (e !is CancellationException) {
-                    Logger.error("HubLink: 代理转发异常", e)
+                    Logger.error("HubLink: 连接异常", e)
                     // 连接异常，触发重连
                     if (config.autoReconnect) {
                         reconnectManager.startReconnect()

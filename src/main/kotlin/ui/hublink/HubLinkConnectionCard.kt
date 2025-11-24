@@ -22,10 +22,13 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -44,6 +47,8 @@ import data.HubLinkConfig
 import data.HubLinkState
 import data.HubLinkReconnectState
 import data.HubLinkTransportType
+import data.SystemProxyManager
+import service.HubLinkClientManager
 import service.SystemProxySetter
 import theme.*
 
@@ -336,14 +341,33 @@ fun ErrorMessageCard(message: String) {
  * 系统代理设置卡片
  */
 @Composable
-fun SystemProxyCard() {
-    var systemProxyEnabled by remember { mutableStateOf(false) }
-    var currentProxy by remember { mutableStateOf<SystemProxySetter.ProxyInfo?>(null) }
+fun SystemProxyCard(config: HubLinkConfig? = null, clientManager: HubLinkClientManager? = null) {
+    val scope = rememberCoroutineScope()
 
-    // 获取当前系统代理设置
+    // 获取全局系统代理状态
+    val proxyState by SystemProxyManager.systemProxyState.collectAsState()
+    val currentProxy by SystemProxyManager.currentProxy.collectAsState()
+
+    // 获取当前连接状态
+    val connectionState by clientManager?.state?.collectAsState() ?: remember { mutableStateOf(HubLinkState.Disconnected) }
+
+    // 刷新状态
     LaunchedEffect(Unit) {
-        currentProxy = SystemProxySetter.getCurrentProxy()
-        // TODO: 检查是否为HubLink设置的代理
+        SystemProxyManager.refreshProxyState()
+    }
+
+    // 根据连接状态和代理状态确定开关状态
+    val systemProxyEnabled = when (proxyState) {
+        is SystemProxyManager.SystemProxyState.Enabled -> {
+            if (connectionState is HubLinkState.Connected) {
+                val connectedState = connectionState as HubLinkState.Connected
+                (proxyState as SystemProxyManager.SystemProxyState.Enabled).host == "127.0.0.1" &&
+                (proxyState as SystemProxyManager.SystemProxyState.Enabled).port == connectedState.localPort
+            } else {
+                false
+            }
+        }
+        else -> false
     }
 
     Card(
@@ -375,9 +399,24 @@ fun SystemProxyCard() {
                 Switch(
                     checked = systemProxyEnabled,
                     onCheckedChange = { enabled ->
-                        systemProxyEnabled = enabled
-                        // TODO: 实现系统代理设置
-                        // SystemProxySetter.setProxy(...)
+                        scope.launch {
+                            try {
+                                if (enabled && connectionState is HubLinkState.Connected) {
+                                    val connectedState = connectionState as HubLinkState.Connected
+                                    val result = SystemProxyManager.enableProxy("127.0.0.1", connectedState.localPort)
+                                    if (result.isFailure) {
+                                        println("设置系统代理失败: ${result.exceptionOrNull()?.message}")
+                                    }
+                                } else {
+                                    val result = SystemProxyManager.disableProxy()
+                                    if (result.isFailure) {
+                                        println("禁用系统代理失败: ${result.exceptionOrNull()?.message}")
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                println("系统代理设置异常: ${e.message}")
+                            }
+                        }
                     }
                 )
             }

@@ -54,7 +54,7 @@ fun OpsDrawerPanel(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = AppDimensions.PaddingM, vertical = AppDimensions.SpaceM),
+                        .padding(horizontal = AppDimensions.PaddingM, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
@@ -66,7 +66,7 @@ fun OpsDrawerPanel(
                             imageVector = selectedTab.icon,
                             contentDescription = null,
                             tint = AppColors.Primary,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(18.dp)
                         )
                         Text(
                             text = selectedTab.displayName,
@@ -80,17 +80,17 @@ fun OpsDrawerPanel(
                     IconButton(
                         onClick = onClose,
                         modifier = Modifier
-                            .size(36.dp)
+                            .size(24.dp)
                             .background(
                                 color = AppColors.Primary.copy(alpha = 0.1f),
-                                shape = RoundedCornerShape(8.dp)
+                                shape = RoundedCornerShape(4.dp)
                             )
                     ) {
                         Icon(
                             imageVector = Icons.Default.ChevronRight,
                             contentDescription = "收起",
                             tint = AppColors.Primary,
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(14.dp)
                         )
                     }
                 }

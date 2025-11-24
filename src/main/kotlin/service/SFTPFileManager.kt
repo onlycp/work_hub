@@ -1,11 +1,14 @@
 package service
 
 import data.FileInfo
+import kotlinx.coroutines.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import net.schmizz.sshj.SSHClient
 import net.schmizz.sshj.sftp.SFTPClient
 import net.schmizz.sshj.sftp.RemoteResourceInfo
+import net.schmizz.sshj.xfer.FileTransfer
+import net.schmizz.sshj.xfer.FileSystemFile
 import java.io.File
 
 /**
@@ -44,20 +47,126 @@ class SFTPFileManager(private val sshClient: SSHClient) {
         }
     }
 
-    suspend fun downloadFile(remotePath: String, localPath: String): Result<Unit> = withContext(Dispatchers.IO) {
+    suspend fun downloadFile(
+        remotePath: String,
+        localPath: String,
+        onProgress: ((Long, Long) -> Unit)? = null
+    ): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             val sftp = sftpClient ?: return@withContext Result.failure(Exception("SFTP未连接"))
-            sftp.get(remotePath, localPath)
+
+            // 创建本地文件目录
+            val localFile = java.io.File(localPath)
+            localFile.parentFile?.mkdirs()
+
+            if (onProgress != null) {
+                // 先获取远程文件大小
+                val remoteFileAttrs = sftp.stat(remotePath)
+                val totalSize = remoteFileAttrs.size
+
+                // 开始下载前报告0%
+                onProgress(0, totalSize)
+
+                // 启动进度监控协程（非阻塞）
+                val progressJob = CoroutineScope(Dispatchers.IO).launch {
+                    val localFile = File(localPath)
+                    var lastSize = 0L
+
+                    while (isActive) {
+                        try {
+                            if (localFile.exists()) {
+                                val currentSize = localFile.length()
+                                if (currentSize != lastSize) {
+                                    onProgress(currentSize, totalSize)
+                                    lastSize = currentSize
+
+                                    // 如果下载完成，退出监控
+                                    if (currentSize >= totalSize) {
+                                        break
+                                    }
+                                }
+                            }
+                            delay(100)
+                        } catch (e: Exception) {
+                            // 忽略进度监控异常
+                        }
+                    }
+                }
+
+                try {
+                    // 执行下载
+                    sftp.get(remotePath, localPath)
+                } finally {
+                    // 确保进度监控停止
+                    progressJob.cancel()
+                    // 确保最终报告100%
+                    onProgress(totalSize, totalSize)
+                }
+            } else {
+                // 无进度回调，直接下载
+                sftp.get(remotePath, localPath)
+            }
+
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(Exception("下载文件失败: ${e.message}", e))
         }
     }
 
-    suspend fun uploadFile(localPath: String, remotePath: String): Result<Unit> = withContext(Dispatchers.IO) {
+    suspend fun uploadFile(
+        localPath: String,
+        remotePath: String,
+        onProgress: ((Long, Long) -> Unit)? = null
+    ): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             val sftp = sftpClient ?: return@withContext Result.failure(Exception("SFTP未连接"))
-            sftp.put(localPath, remotePath)
+
+            val localFile = java.io.File(localPath)
+            if (!localFile.exists()) {
+                return@withContext Result.failure(Exception("本地文件不存在"))
+            }
+
+            if (onProgress != null) {
+                val totalSize = localFile.length()
+
+                // 开始上传前报告0%
+                onProgress(0, totalSize)
+
+                // 启动进度监控协程（简单的时间估算，非阻塞）
+                val progressJob = CoroutineScope(Dispatchers.IO).launch {
+                    val startTime = System.currentTimeMillis()
+                    var lastReported = 0L
+
+                    while (isActive) {
+                        try {
+                            val elapsed = System.currentTimeMillis() - startTime
+                            // 基于时间简单估算进度
+                            val estimatedProgress = (elapsed * totalSize / 3000L).coerceAtMost(totalSize)
+                            if (estimatedProgress != lastReported && estimatedProgress < totalSize) {
+                                onProgress(estimatedProgress, totalSize)
+                                lastReported = estimatedProgress
+                            }
+                            delay(200)
+                        } catch (e: Exception) {
+                            // 忽略进度监控异常
+                        }
+                    }
+                }
+
+                try {
+                    // 执行上传
+                    sftp.put(localPath, remotePath)
+                } finally {
+                    // 确保进度监控停止
+                    progressJob.cancel()
+                    // 确保最终报告100%
+                    onProgress(totalSize, totalSize)
+                }
+            } else {
+                // 无进度回调，直接上传
+                sftp.put(localPath, remotePath)
+            }
+
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(Exception("上传文件失败: ${e.message}", e))

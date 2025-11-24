@@ -72,8 +72,8 @@ fun HubLinkConfigDialog(
     var psk by remember { mutableStateOf(config?.psk ?: "") }
     var transportType by remember { mutableStateOf(config?.transport ?: HubLinkTransportType.DIRECT) }
     var isShared by remember { mutableStateOf(config?.isShared ?: false) }
-    var obfs by remember { mutableStateOf(config?.obfs ?: "tls") }
-    var obfsHost by remember { mutableStateOf(config?.obfsHost ?: "www.bing.com") }
+    var obfs by remember { mutableStateOf(config?.obfs ?: "none") }
+    var obfsHost by remember { mutableStateOf(config?.obfsHost ?: "") }
 
     // MQTT配置
     var mqttHost by remember { mutableStateOf(config?.mqttConfig?.mqttHost ?: "") }

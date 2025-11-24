@@ -66,7 +66,14 @@ object SystemProxySetter {
         return try {
             val networks = getMacNetworkServices()
 
+            if (networks.isEmpty()) {
+                Logger.warn("macOS: 未找到可用的网络服务，无法设置代理")
+                return Result.failure(Exception("未找到可用的网络服务"))
+            }
+
             networks.forEach { service ->
+                Logger.debug("macOS: 为网络服务 '$service' 设置代理")
+
                 // 设置HTTP代理
                 executeCommand("networksetup", "-setwebproxy", service, host, port.toString())
                 executeCommand("networksetup", "-setwebproxystate", service, if (enable) "on" else "off")
@@ -78,9 +85,18 @@ object SystemProxySetter {
                 // 设置SOCKS代理
                 executeCommand("networksetup", "-setsocksfirewallproxy", service, host, port.toString())
                 executeCommand("networksetup", "-setsocksfirewallproxystate", service, if (enable) "on" else "off")
+
+                // 设置代理绕过列表 - 排除本地地址和私有网络，避免循环代理
+                if (enable) {
+                    val bypassList = "127.0.0.1,localhost,*.local,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+                    executeCommand("networksetup", "-setproxybypassdomains", service, bypassList)
+                } else {
+                    // 清除绕过列表
+                    executeCommand("networksetup", "-setproxybypassdomains", service, "")
+                }
             }
 
-            Logger.info("macOS代理设置完成: ${if (enable) "启用" else "禁用"} $host:$port")
+            Logger.info("macOS代理设置完成: ${if (enable) "启用" else "禁用"} $host:$port (处理了 ${networks.size} 个网络服务)")
             Result.success(Unit)
 
         } catch (e: Exception) {
@@ -96,12 +112,12 @@ object SystemProxySetter {
         return try {
             val proxyUrl = if (enable) "http://$host:$port" else ""
 
-            // 设置环境变量
+            // 设置环境变量 - 包含更全面的本地地址绕过列表
             val envVars = mapOf(
                 "http_proxy" to proxyUrl,
                 "https_proxy" to proxyUrl,
                 "ftp_proxy" to proxyUrl,
-                "no_proxy" to "localhost,127.0.0.1,::1"
+                "no_proxy" to "localhost,127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,*.local"
             )
 
             // GNOME桌面环境
@@ -133,7 +149,7 @@ object SystemProxySetter {
         return try {
             val result = executeCommand("networksetup", "-listallnetworkservices")
             result.lines()
-                .filter { it.isNotBlank() && !it.startsWith("*") }
+                .filter { it.isNotBlank() && !it.startsWith("*") && !it.contains("*") }
                 .map { it.trim() }
         } catch (e: Exception) {
             listOf("Wi-Fi", "Ethernet") // 默认服务
@@ -166,6 +182,10 @@ object SystemProxySetter {
                 executeCommand("gsettings", "set", "org.gnome.system.proxy.http", "port", port.toString())
                 executeCommand("gsettings", "set", "org.gnome.system.proxy.https", "host", host)
                 executeCommand("gsettings", "set", "org.gnome.system.proxy.https", "port", port.toString())
+
+                // 设置忽略主机列表，避免循环代理
+                val ignoreHosts = arrayOf("localhost", "127.0.0.0/8", "::1", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "*.local")
+                executeCommand("gsettings", "set", "org.gnome.system.proxy", "ignore-hosts", ignoreHosts.joinToString(prefix = "[", postfix = "]", separator = ","))
             }
         } catch (e: Exception) {
             Logger.warn("GNOME代理设置失败: ${e.message}")
@@ -185,6 +205,13 @@ object SystemProxySetter {
                 val proxyString = "http://$host:$port"
                 executeCommand("kwriteconfig5", "--file", "kioslaverc", "--group", "Proxy Settings", "--key", "httpProxy", proxyString)
                 executeCommand("kwriteconfig5", "--file", "kioslaverc", "--group", "Proxy Settings", "--key", "httpsProxy", proxyString)
+
+                // 设置不使用代理的主机列表
+                val noProxyFor = "localhost,127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,*.local"
+                executeCommand("kwriteconfig5", "--file", "kioslaverc", "--group", "Proxy Settings", "--key", "NoProxyFor", noProxyFor)
+            } else {
+                // 清除代理设置
+                executeCommand("kwriteconfig5", "--file", "kioslaverc", "--group", "Proxy Settings", "--key", "NoProxyFor", "")
             }
         } catch (e: Exception) {
             Logger.warn("KDE代理设置失败: ${e.message}")

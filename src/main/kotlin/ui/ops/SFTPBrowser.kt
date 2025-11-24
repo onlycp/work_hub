@@ -1,6 +1,10 @@
 package ui.ops
 
 import data.FileInfo
+import data.TransferManager
+import data.TransferTask
+import data.TransferType
+import data.TransferStatus
 import service.SFTPFileManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -19,6 +23,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -33,6 +38,8 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
@@ -57,8 +64,32 @@ fun SFTPBrowser(
     var detailFile by remember { mutableStateOf<FileInfo?>(null) }
     var showRenameDialog by remember { mutableStateOf(false) }
     var renameFile by remember { mutableStateOf<FileInfo?>(null) }
+    var showTransferList by remember { mutableStateOf(false) }
 
     val scope = rememberCoroutineScope()
+    
+    // 安全地获取活跃任务数量，避免并发修改异常
+    val tasksState = TransferManager.tasks.collectAsState()
+    // 使用 derivedStateOf 确保线程安全
+    val activeTasks = remember {
+        derivedStateOf {
+            // 创建列表快照以避免并发修改
+            tasksState.value.toList().filter { 
+                it.status == TransferStatus.PENDING || it.status == TransferStatus.RUNNING
+            }
+        }
+    }.value
+    
+    val activeTaskCount = activeTasks.size
+    
+    // 计算总进度（所有活跃任务的平均进度）
+    val overallProgress = remember(activeTasks) {
+        if (activeTasks.isEmpty()) {
+            0f
+        } else {
+            activeTasks.map { it.progress }.average().toFloat()
+        }
+    }
 
     // 加载文件列表
     fun loadFiles() {
@@ -142,6 +173,70 @@ fun SFTPBrowser(
 
                 // 操作按钮组
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    // 传输列表按钮
+                    Box {
+                        IconButton(
+                            onClick = { showTransferList = true },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            // 使用上下箭头叠加的图标效果，带进度显示
+                            Box(
+                                modifier = Modifier.size(16.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                // 如果有活跃任务，显示圆形进度条
+                                if (activeTaskCount > 0 && overallProgress > 0f) {
+                                    CircularProgressIndicator(
+                                        progress = overallProgress / 100f,
+                                        modifier = Modifier.size(16.dp),
+                                        strokeWidth = 2.dp,
+                                        color = AppColors.Primary,
+                                        backgroundColor = AppColors.Divider
+                                    )
+                                }
+                                
+                                // 上箭头
+                                Icon(
+                                    imageVector = Icons.Default.ArrowUpward,
+                                    contentDescription = null,
+                                    tint = AppColors.Primary,
+                                    modifier = Modifier
+                                        .size(10.dp)
+                                        .offset(y = (-3).dp)
+                                )
+                                // 下箭头
+                                Icon(
+                                    imageVector = Icons.Default.ArrowDownward,
+                                    contentDescription = "传输列表",
+                                    tint = AppColors.Success,
+                                    modifier = Modifier
+                                        .size(10.dp)
+                                        .offset(y = 3.dp)
+                                )
+                            }
+                        }
+                        // 活跃任务数量徽章
+                        if (activeTaskCount > 0) {
+                            Box(
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .offset(x = 12.dp, y = (-4).dp)
+                                    .background(
+                                        AppColors.Error,
+                                        shape = androidx.compose.foundation.shape.CircleShape
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = if (activeTaskCount > 9) "9+" else "$activeTaskCount",
+                                    style = AppTypography.Caption,
+                                    color = Color.White,
+                                    fontSize = 8.sp
+                                )
+                            }
+                        }
+                    }
+
                     // 视图切换按钮
                     IconButton(
                         onClick = { viewMode = if (viewMode == "list") "grid" else "list" },
@@ -158,27 +253,95 @@ fun SFTPBrowser(
                     // 上传文件按钮
                     IconButton(
                         onClick = {
-                            scope.launch {
+                            // 文件选择在UI线程执行
+                            scope.launch(Dispatchers.IO) {
                                 try {
                                     val fileChooser = JFileChooser()
-                                    val result = fileChooser.showOpenDialog(null)
+                                    val result = withContext(Dispatchers.Main) {
+                                        fileChooser.showOpenDialog(null)
+                                    }
+                                    
                                     if (result == JFileChooser.APPROVE_OPTION) {
                                         val localFile = fileChooser.selectedFile
                                         val remotePath = "$currentPath/${localFile.name}"
-                                        isLoading = true
-                                        sftpManager?.uploadFile(localFile.absolutePath, remotePath)?.fold(
-                                            onSuccess = {
-                                                loadFiles()
-                                            },
-                                            onFailure = { error ->
-                                                errorMessage = error.message
-                                                isLoading = false
-                                            }
+                                        
+                                        // 创建传输任务
+                                        val task = TransferTask(
+                                            fileName = localFile.name,
+                                            filePath = localFile.absolutePath,
+                                            remotePath = remotePath,
+                                            type = TransferType.UPLOAD,
+                                            status = TransferStatus.PENDING,
+                                            totalSize = localFile.length(),
+                                            isDirectory = localFile.isDirectory
                                         )
+                                        TransferManager.addTask(task)
+                                        
+                                        // 更新任务状态为运行中
+                                        TransferManager.updateTask(task.id) { 
+                                            it.copy(status = TransferStatus.RUNNING)
+                                        }
+                                        
+                                        // 在后台协程中执行上传，不阻塞UI
+                                        launch(Dispatchers.IO) {
+                                            val startTime = System.currentTimeMillis()
+                                            var lastUpdateTime = startTime
+                                            var lastTransferred = 0L
+                                            
+                                            sftpManager?.uploadFile(
+                                                localFile.absolutePath,
+                                                remotePath
+                                            ) { transferred, total ->
+                                                // 更新进度
+                                                val currentTime = System.currentTimeMillis()
+                                                val timeDelta = (currentTime - lastUpdateTime).coerceAtLeast(50) // 降低到50ms
+
+                                                // 总是更新传输大小，但控制速度更新频率
+                                                TransferManager.updateTask(task.id) {
+                                                    it.copy(transferredSize = transferred)
+                                                }
+
+                                                if (timeDelta >= 100) { // 每100ms更新速度
+                                                    val speed = ((transferred - lastTransferred) * 1000) / timeDelta
+                                                    TransferManager.updateTask(task.id) {
+                                                        it.copy(speed = speed)
+                                                    }
+                                                    lastUpdateTime = currentTime
+                                                    lastTransferred = transferred
+                                                }
+                                            }?.fold(
+                                                onSuccess = {
+                                                    TransferManager.updateTask(task.id) {
+                                                        it.copy(
+                                                            status = TransferStatus.COMPLETED,
+                                                            transferredSize = it.totalSize,
+                                                            speed = 0L,
+                                                            endTime = System.currentTimeMillis()
+                                                        )
+                                                    }
+                                                    withContext(Dispatchers.Main) {
+                                                        loadFiles()
+                                                    }
+                                                },
+                                                onFailure = { error ->
+                                                    TransferManager.updateTask(task.id) {
+                                                        it.copy(
+                                                            status = TransferStatus.FAILED,
+                                                            errorMessage = error.message,
+                                                            endTime = System.currentTimeMillis()
+                                                        )
+                                                    }
+                                                    withContext(Dispatchers.Main) {
+                                                        errorMessage = error.message
+                                                    }
+                                                }
+                                            )
+                                        }
                                     }
                                 } catch (e: Exception) {
-                                    errorMessage = "上传失败: ${e.message}"
-                                    isLoading = false
+                                    withContext(Dispatchers.Main) {
+                                        errorMessage = "上传失败: ${e.message}"
+                                    }
                                 }
                             }
                         },
@@ -195,30 +358,77 @@ fun SFTPBrowser(
                     // 上传文件夹按钮
                     IconButton(
                         onClick = {
-                            scope.launch {
+                            // 文件选择在UI线程执行
+                            scope.launch(Dispatchers.IO) {
                                 try {
                                     val fileChooser = JFileChooser()
                                     fileChooser.fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
                                     fileChooser.dialogTitle = "选择要上传的文件夹"
-                                    val result = fileChooser.showOpenDialog(null)
+                                    val result = withContext(Dispatchers.Main) {
+                                        fileChooser.showOpenDialog(null)
+                                    }
+                                    
                                     if (result == JFileChooser.APPROVE_OPTION) {
                                         val localFolder = fileChooser.selectedFile
                                         val remotePath = "$currentPath/${localFolder.name}"
-                                        isLoading = true
-                                        sftpManager?.uploadDirectory(localFolder.absolutePath, remotePath)?.fold(
-                                            onSuccess = {
-                                                println("✓ 文件夹上传完成: ${localFolder.name}")
-                                                loadFiles()
-                                            },
-                                            onFailure = { error ->
-                                                errorMessage = error.message
-                                                isLoading = false
-                                            }
+                                        
+                                        // 在后台计算文件夹大小
+                                        val folderSize = withContext(Dispatchers.IO) {
+                                            calculateFolderSize(localFolder)
+                                        }
+                                        
+                                        // 创建传输任务
+                                        val task = TransferTask(
+                                            fileName = localFolder.name,
+                                            filePath = localFolder.absolutePath,
+                                            remotePath = remotePath,
+                                            type = TransferType.UPLOAD,
+                                            status = TransferStatus.PENDING,
+                                            totalSize = folderSize,
+                                            isDirectory = true
                                         )
+                                        TransferManager.addTask(task)
+                                        
+                                        // 更新任务状态为运行中
+                                        TransferManager.updateTask(task.id) {
+                                            it.copy(status = TransferStatus.RUNNING)
+                                        }
+                                        
+                                        // 在后台协程中执行上传，不阻塞UI
+                                        launch(Dispatchers.IO) {
+                                            sftpManager?.uploadDirectory(localFolder.absolutePath, remotePath)?.fold(
+                                                onSuccess = {
+                                                    TransferManager.updateTask(task.id) {
+                                                        it.copy(
+                                                            status = TransferStatus.COMPLETED,
+                                                            transferredSize = it.totalSize,
+                                                            endTime = System.currentTimeMillis()
+                                                        )
+                                                    }
+                                                    println("✓ 文件夹上传完成: ${localFolder.name}")
+                                                    withContext(Dispatchers.Main) {
+                                                        loadFiles()
+                                                    }
+                                                },
+                                                onFailure = { error ->
+                                                    TransferManager.updateTask(task.id) {
+                                                        it.copy(
+                                                            status = TransferStatus.FAILED,
+                                                            errorMessage = error.message,
+                                                            endTime = System.currentTimeMillis()
+                                                        )
+                                                    }
+                                                    withContext(Dispatchers.Main) {
+                                                        errorMessage = error.message
+                                                    }
+                                                }
+                                            )
+                                        }
                                     }
                                 } catch (e: Exception) {
-                                    errorMessage = "上传失败: ${e.message}"
-                                    isLoading = false
+                                    withContext(Dispatchers.Main) {
+                                        errorMessage = "上传失败: ${e.message}"
+                                    }
                                 }
                             }
                         },
@@ -389,7 +599,33 @@ fun SFTPBrowser(
                 }
             )
         }
+
+        // 传输列表对话框
+        if (showTransferList) {
+            TransferListDialog(
+                onDismiss = { showTransferList = false }
+            )
+        }
     }
+}
+
+/**
+ * 计算文件夹大小
+ */
+private fun calculateFolderSize(folder: File): Long {
+    var size = 0L
+    if (folder.isDirectory) {
+        folder.listFiles()?.forEach { file ->
+            size += if (file.isDirectory) {
+                calculateFolderSize(file)
+            } else {
+                file.length()
+            }
+        }
+    } else {
+        size = folder.length()
+    }
+    return size
 }
 
 private fun formatFileSize(bytes: Long): String {
@@ -613,78 +849,139 @@ fun FileListItem(
                     },
                     onDownload = {
                         showContextMenu = false
-                        operations.scope.launch {
-                            try {
-                                // 使用SwingUtilities.invokeLater在EDT线程中显示文件选择对话框
-                                val selectedFilePath = withContext(Dispatchers.IO) {
-                                    var result: String? = null
-                                    val latch = java.util.concurrent.CountDownLatch(1)
-
-                                    javax.swing.SwingUtilities.invokeLater {
-                                        try {
-                                            val fileChooser = JFileChooser()
-                                            if (file.isDirectory) {
-                                                fileChooser.fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
-                                                fileChooser.dialogTitle = "选择保存文件夹的位置"
-                                            } else {
-                                                fileChooser.selectedFile = File(file.name)
-                                            }
-                                            val dialogResult = fileChooser.showSaveDialog(null)
-                                            if (dialogResult == JFileChooser.APPROVE_OPTION) {
-                                                result = fileChooser.selectedFile.absolutePath
-                                            }
-                                        } finally {
-                                            latch.countDown()
-                                        }
-                                    }
-
-                                    latch.await() // 等待对话框关闭
-                                    result
-                                }
-
-                                selectedFilePath?.let { localPath ->
-                                    operations.onLoadingChange(true)
-                                    if (file.isDirectory) {
-                                        // 对于文件夹下载，确保目标路径包含文件夹名称
-                                        val targetPath = if (File(localPath).isDirectory) {
-                                            "$localPath/${file.name}"
-                                        } else {
-                                            localPath
-                                        }
-                                        operations.sftpManager.downloadDirectory(file.path, targetPath).fold(
-                                            onSuccess = {
-                                                operations.onErrorChange(null)
-                                                operations.onLoadingChange(false)
-                                                println("✓ 文件夹下载完成: ${file.name}")
-                                            },
-                                            onFailure = { error ->
-                                                operations.onErrorChange(error.message)
-                                                operations.onLoadingChange(false)
-                                            }
-                                        )
-                                    } else {
-                                        // 对于文件下载，如果用户选择了目录，需要添加文件名
-                                        val targetPath = if (File(localPath).isDirectory) {
-                                            "$localPath/${file.name}"
-                                        } else {
-                                            localPath
-                                        }
-                                        operations.sftpManager.downloadFile(file.path, targetPath).fold(
-                                            onSuccess = {
-                                                operations.onErrorChange(null)
-                                                operations.onLoadingChange(false)
-                                            },
-                                            onFailure = { error ->
-                                                operations.onErrorChange(error.message)
-                                                operations.onLoadingChange(false)
-                                            }
-                                        )
-                                    }
-                                }
-                            } catch (e: Exception) {
-                                operations.onErrorChange("下载失败: ${e.message}")
-                                operations.onLoadingChange(false)
+                        // 先显示文件选择对话框，然后再启动协程执行下载
+                        try {
+                            val fileChooser = JFileChooser()
+                            if (file.isDirectory) {
+                                fileChooser.fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
+                                fileChooser.dialogTitle = "选择保存文件夹的位置"
+                            } else {
+                                fileChooser.selectedFile = File(file.name)
                             }
+                            val dialogResult = fileChooser.showSaveDialog(null)
+                            if (dialogResult == JFileChooser.APPROVE_OPTION) {
+                                val selectedFile = fileChooser.selectedFile
+                                val localPath = selectedFile.absolutePath
+
+                                // 对于文件下载，如果用户选择了目录，需要添加文件名
+                                val targetPath = if (selectedFile.isDirectory) {
+                                    "$localPath/${file.name}"
+                                } else {
+                                    localPath
+                                }
+
+                                // 在后台协程中执行下载，不阻塞UI
+                                operations.scope.launch(Dispatchers.IO) {
+                                    try {
+                                        // 创建传输任务
+                                        val task = TransferTask(
+                                            fileName = file.name,
+                                            filePath = file.path,
+                                            localPath = targetPath,
+                                            type = TransferType.DOWNLOAD,
+                                            status = TransferStatus.PENDING,
+                                            totalSize = file.size,
+                                            isDirectory = file.isDirectory
+                                        )
+                                        TransferManager.addTask(task)
+
+                                        // 更新任务状态为运行中
+                                        TransferManager.updateTask(task.id) {
+                                            it.copy(status = TransferStatus.RUNNING)
+                                        }
+
+                                        val startTime = System.currentTimeMillis()
+                                        var lastUpdateTime = startTime
+                                        var lastTransferred = 0L
+
+                                        if (file.isDirectory) {
+                                            // 对于文件夹下载，确保目标路径包含文件夹名称
+                                            operations.sftpManager.downloadDirectory(file.path, targetPath).fold(
+                                                onSuccess = {
+                                                    TransferManager.updateTask(task.id) {
+                                                        it.copy(
+                                                            status = TransferStatus.COMPLETED,
+                                                            transferredSize = it.totalSize,
+                                                            endTime = System.currentTimeMillis()
+                                                        )
+                                                    }
+                                                    withContext(Dispatchers.Main) {
+                                                        operations.onErrorChange(null)
+                                                    }
+                                                    println("✓ 文件夹下载完成: ${file.name}")
+                                                },
+                                                onFailure = { error ->
+                                                    TransferManager.updateTask(task.id) {
+                                                        it.copy(
+                                                            status = TransferStatus.FAILED,
+                                                            errorMessage = error.message,
+                                                            endTime = System.currentTimeMillis()
+                                                        )
+                                                    }
+                                                    withContext(Dispatchers.Main) {
+                                                        operations.onErrorChange(error.message)
+                                                    }
+                                                }
+                                            )
+                                        } else {
+                                            operations.sftpManager.downloadFile(
+                                                file.path,
+                                                targetPath
+                                            ) { transferred, total ->
+                                                // 更新进度
+                                                val currentTime = System.currentTimeMillis()
+                                                val timeDelta = (currentTime - lastUpdateTime).coerceAtLeast(50) // 降低到50ms
+
+                                                // 总是更新传输大小，但控制速度更新频率
+                                                TransferManager.updateTask(task.id) {
+                                                    it.copy(transferredSize = transferred)
+                                                }
+
+                                                if (timeDelta >= 100) { // 每100ms更新速度
+                                                    val speed = ((transferred - lastTransferred) * 1000) / timeDelta
+                                                    TransferManager.updateTask(task.id) {
+                                                        it.copy(speed = speed)
+                                                    }
+                                                    lastUpdateTime = currentTime
+                                                    lastTransferred = transferred
+                                                }
+                                            }.fold(
+                                                onSuccess = {
+                                                    TransferManager.updateTask(task.id) {
+                                                        it.copy(
+                                                            status = TransferStatus.COMPLETED,
+                                                            transferredSize = it.totalSize,
+                                                            speed = 0L,
+                                                            endTime = System.currentTimeMillis()
+                                                        )
+                                                    }
+                                                    withContext(Dispatchers.Main) {
+                                                        operations.onErrorChange(null)
+                                                    }
+                                                },
+                                                onFailure = { error ->
+                                                    TransferManager.updateTask(task.id) {
+                                                        it.copy(
+                                                            status = TransferStatus.FAILED,
+                                                            errorMessage = error.message,
+                                                            endTime = System.currentTimeMillis()
+                                                        )
+                                                    }
+                                                    withContext(Dispatchers.Main) {
+                                                        operations.onErrorChange(error.message)
+                                                    }
+                                                }
+                                            )
+                                        }
+                                    } catch (e: Exception) {
+                                        withContext(Dispatchers.Main) {
+                                            operations.onErrorChange("下载失败: ${e.message}")
+                                        }
+                                    }
+                                }
+                            }
+                        } catch (e: Exception) {
+                            operations.onErrorChange("选择保存位置失败: ${e.message}")
                         }
                     },
                     onRename = {
@@ -911,6 +1208,7 @@ fun DetailRow(label: String, value: String) {
     }
 }
 
+
 // 获取文件图标的工具函数
 private fun getFileIcon(file: FileInfo): androidx.compose.ui.graphics.vector.ImageVector {
     return if (file.isDirectory) {
@@ -971,12 +1269,6 @@ private fun getFileIconTint(file: FileInfo): androidx.compose.ui.graphics.Color 
     }
 }
 
-private fun formatModifiedTime(timestamp: Long): String {
-    if (timestamp == 0L) return "--"
-    val date = java.util.Date(timestamp * 1000)
-    val format = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
-    return format.format(date)
-}
 
 // 图标网格视图
 @Composable
@@ -1052,23 +1344,22 @@ fun FileGridItem(
                 // 紧凑图标
                 Icon(
                     imageVector = getFileIcon(file),
-                    contentDescription = null,
+                    contentDescription = file.name,
                     tint = getFileIconTint(file),
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier
+                        .size(32.dp)
+                        .padding(bottom = 4.dp)
                 )
 
-                Spacer(modifier = Modifier.height(4.dp))
-
-                // 文件名（支持换行）
+                // 文件名（紧凑显示）
                 Text(
                     text = file.name,
                     style = AppTypography.Caption,
                     color = AppColors.TextPrimary,
-                    fontWeight = if (file.isDirectory) FontWeight.Medium else FontWeight.Normal,
                     maxLines = 2,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth(),
-                    lineHeight = 12.sp
+                    textAlign = TextAlign.Center,
+                    lineHeight = 12.sp,
+                    modifier = Modifier.fillMaxWidth()
                 )
             }
         }
@@ -1135,78 +1426,139 @@ fun FileGridItem(
                 },
                 onDownload = {
                     showContextMenu = false
-                    operations.scope.launch {
-                        try {
-                            // 使用SwingUtilities.invokeLater在EDT线程中显示文件选择对话框
-                            val selectedFilePath = withContext(Dispatchers.IO) {
-                                var result: String? = null
-                                val latch = java.util.concurrent.CountDownLatch(1)
-
-                                javax.swing.SwingUtilities.invokeLater {
-                                    try {
-                                        val fileChooser = JFileChooser()
-                                        if (file.isDirectory) {
-                                            fileChooser.fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
-                                            fileChooser.dialogTitle = "选择保存文件夹的位置"
-                                        } else {
-                                            fileChooser.selectedFile = File(file.name)
-                                        }
-                                        val dialogResult = fileChooser.showSaveDialog(null)
-                                        if (dialogResult == JFileChooser.APPROVE_OPTION) {
-                                            result = fileChooser.selectedFile.absolutePath
-                                        }
-                                    } finally {
-                                        latch.countDown()
-                                    }
-                                }
-
-                                latch.await() // 等待对话框关闭
-                                result
-                            }
-
-                            selectedFilePath?.let { localPath ->
-                                operations.onLoadingChange(true)
-                                if (file.isDirectory) {
-                                    // 对于文件夹下载，确保目标路径包含文件夹名称
-                                    val targetPath = if (File(localPath).isDirectory) {
-                                        "$localPath/${file.name}"
-                                    } else {
-                                        localPath
-                                    }
-                                    operations.sftpManager.downloadDirectory(file.path, targetPath).fold(
-                                        onSuccess = {
-                                            operations.onErrorChange(null)
-                                            operations.onLoadingChange(false)
-                                            println("✓ 文件夹下载完成: ${file.name}")
-                                        },
-                                        onFailure = { error ->
-                                            operations.onErrorChange(error.message)
-                                            operations.onLoadingChange(false)
-                                        }
-                                    )
-                                } else {
-                                    // 对于文件下载，如果用户选择了目录，需要添加文件名
-                                    val targetPath = if (File(localPath).isDirectory) {
-                                        "$localPath/${file.name}"
-                                    } else {
-                                        localPath
-                                    }
-                                    operations.sftpManager.downloadFile(file.path, targetPath).fold(
-                                        onSuccess = {
-                                            operations.onErrorChange(null)
-                                            operations.onLoadingChange(false)
-                                        },
-                                        onFailure = { error ->
-                                            operations.onErrorChange(error.message)
-                                            operations.onLoadingChange(false)
-                                        }
-                                    )
-                                }
-                            }
-                        } catch (e: Exception) {
-                            operations.onErrorChange("下载失败: ${e.message}")
-                            operations.onLoadingChange(false)
+                    // 先显示文件选择对话框，然后再启动协程执行下载
+                    try {
+                        val fileChooser = JFileChooser()
+                        if (file.isDirectory) {
+                            fileChooser.fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
+                            fileChooser.dialogTitle = "选择保存文件夹的位置"
+                        } else {
+                            fileChooser.selectedFile = File(file.name)
                         }
+                        val dialogResult = fileChooser.showSaveDialog(null)
+                        if (dialogResult == JFileChooser.APPROVE_OPTION) {
+                            val selectedFile = fileChooser.selectedFile
+                            val localPath = selectedFile.absolutePath
+
+                            // 对于文件下载，如果用户选择了目录，需要添加文件名
+                            val targetPath = if (selectedFile.isDirectory) {
+                                "$localPath/${file.name}"
+                            } else {
+                                localPath
+                            }
+
+                            // 在后台协程中执行下载，不阻塞UI
+                            operations.scope.launch(Dispatchers.IO) {
+                                try {
+                                    // 创建传输任务
+                                    val task = TransferTask(
+                                        fileName = file.name,
+                                        filePath = file.path,
+                                        localPath = targetPath,
+                                        type = TransferType.DOWNLOAD,
+                                        status = TransferStatus.PENDING,
+                                        totalSize = file.size,
+                                        isDirectory = file.isDirectory
+                                    )
+                                    TransferManager.addTask(task)
+
+                                    // 更新任务状态为运行中
+                                    TransferManager.updateTask(task.id) {
+                                        it.copy(status = TransferStatus.RUNNING)
+                                    }
+
+                                    val startTime = System.currentTimeMillis()
+                                    var lastUpdateTime = startTime
+                                    var lastTransferred = 0L
+
+                                    if (file.isDirectory) {
+                                        // 对于文件夹下载，确保目标路径包含文件夹名称
+                                        operations.sftpManager.downloadDirectory(file.path, targetPath).fold(
+                                            onSuccess = {
+                                                TransferManager.updateTask(task.id) {
+                                                    it.copy(
+                                                        status = TransferStatus.COMPLETED,
+                                                        transferredSize = it.totalSize,
+                                                        endTime = System.currentTimeMillis()
+                                                    )
+                                                }
+                                                withContext(Dispatchers.Main) {
+                                                    operations.onErrorChange(null)
+                                                }
+                                                println("✓ 文件夹下载完成: ${file.name}")
+                                            },
+                                            onFailure = { error ->
+                                                TransferManager.updateTask(task.id) {
+                                                    it.copy(
+                                                        status = TransferStatus.FAILED,
+                                                        errorMessage = error.message,
+                                                        endTime = System.currentTimeMillis()
+                                                    )
+                                                }
+                                                withContext(Dispatchers.Main) {
+                                                    operations.onErrorChange(error.message)
+                                                }
+                                            }
+                                        )
+                                    } else {
+                                        operations.sftpManager.downloadFile(
+                                            file.path,
+                                            targetPath
+                                        ) { transferred, total ->
+                                            // 更新进度
+                                            val currentTime = System.currentTimeMillis()
+                                            val timeDelta = (currentTime - lastUpdateTime).coerceAtLeast(50) // 降低到50ms
+
+                                            // 总是更新传输大小，但控制速度更新频率
+                                            TransferManager.updateTask(task.id) {
+                                                it.copy(transferredSize = transferred)
+                                            }
+
+                                            if (timeDelta >= 100) { // 每100ms更新速度
+                                                val speed = ((transferred - lastTransferred) * 1000) / timeDelta
+                                                TransferManager.updateTask(task.id) {
+                                                    it.copy(speed = speed)
+                                                }
+                                                lastUpdateTime = currentTime
+                                                lastTransferred = transferred
+                                            }
+                                        }.fold(
+                                            onSuccess = {
+                                                TransferManager.updateTask(task.id) {
+                                                    it.copy(
+                                                        status = TransferStatus.COMPLETED,
+                                                        transferredSize = it.totalSize,
+                                                        speed = 0L,
+                                                        endTime = System.currentTimeMillis()
+                                                    )
+                                                }
+                                                withContext(Dispatchers.Main) {
+                                                    operations.onErrorChange(null)
+                                                }
+                                            },
+                                            onFailure = { error ->
+                                                TransferManager.updateTask(task.id) {
+                                                    it.copy(
+                                                        status = TransferStatus.FAILED,
+                                                        errorMessage = error.message,
+                                                        endTime = System.currentTimeMillis()
+                                                    )
+                                                }
+                                                withContext(Dispatchers.Main) {
+                                                    operations.onErrorChange(error.message)
+                                                }
+                                            }
+                                        )
+                                    }
+                                } catch (e: Exception) {
+                                    withContext(Dispatchers.Main) {
+                                        operations.onErrorChange("下载失败: ${e.message}")
+                                    }
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        operations.onErrorChange("选择保存位置失败: ${e.message}")
                     }
                 },
                 onRename = {
@@ -1240,4 +1592,42 @@ fun FileGridItem(
             )
         }
     }
+}
+
+
+// 获取文件图标颜色的工具函数
+private fun getFileIconColor(file: FileInfo): androidx.compose.ui.graphics.Color {
+    return if (file.isDirectory) {
+        AppColors.Warning
+    } else {
+        val extension = file.name.substringAfterLast('.', "").lowercase()
+        when (extension) {
+            // 图片文件 - 绿色
+            "jpg", "jpeg", "png", "gif", "bmp", "webp", "svg", "ico" -> AppColors.Success
+            // 视频文件 - 红色
+            "mp4", "avi", "mkv", "mov", "wmv", "flv", "webm" -> AppColors.Error
+            // 音频文件 - 紫色
+            "mp3", "wav", "flac", "aac", "ogg", "m4a" -> AppColors.Primary.copy(alpha = 0.8f)
+            // 文档文件 - 蓝色
+            "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx" -> AppColors.Info ?: AppColors.Primary
+            // 代码文件 - 青色
+            "kt", "java", "py", "js", "ts", "html", "css", "xml", "json", "yml", "yaml" -> AppColors.Success.copy(alpha = 0.8f)
+            // 脚本文件 - 橙色
+            "sh", "bat", "cmd" -> AppColors.Warning.copy(alpha = 0.8f)
+            // 压缩文件 - 灰色
+            "zip", "rar", "7z", "tar", "gz", "bz2", "xz" -> AppColors.TextSecondary
+            // 文本文件 - 深灰色
+            "txt", "md", "log" -> AppColors.TextPrimary
+            // 默认文件 - 灰色
+            else -> AppColors.TextSecondary
+        }
+    }
+}
+
+
+private fun formatModifiedTime(timestamp: Long): String {
+    if (timestamp == 0L) return "--"
+    val date = java.util.Date(timestamp * 1000)
+    val format = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
+    return format.format(date)
 }

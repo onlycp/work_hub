@@ -139,6 +139,9 @@ object HubLinkManager {
             val updatedUserData = currentUserData.copy(hublinkConfigs = updatedConfigs)
             GitDataManager.saveCurrentUserData(currentUserId, updatedUserData).getOrThrow()
 
+            // 更新合并目录，确保UI能看到最新数据
+            GitDataManager.mergeAllUserData()
+
             println("✅ 保存代理配置成功")
             Result.success(Unit)
         } catch (e: Exception) {
@@ -180,6 +183,9 @@ object HubLinkManager {
             val updatedUserData = currentUserData.copy(hublinkConfigs = updatedConfigs)
             GitDataManager.saveCurrentUserData(currentUserId, updatedUserData).getOrThrow()
 
+            // 更新合并目录，确保UI能看到最新数据
+            GitDataManager.mergeAllUserData()
+
             println("✅ 删除代理配置成功")
             Result.success(Unit)
         } catch (e: Exception) {
@@ -207,8 +213,8 @@ object HubLinkManager {
         psk: String,
         transport: HubLinkTransportType = HubLinkTransportType.DIRECT,
         mqttConfig: HubLinkMqttConfig? = null,
-        obfs: String? = "tls",
-        obfsHost: String? = "www.bing.com"
+        obfs: String? = null,
+        obfsHost: String? = null
     ): HubLinkConfig {
         return HubLinkConfig(
             id = java.util.UUID.randomUUID().toString(),

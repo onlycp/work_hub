@@ -623,6 +623,59 @@ object GitDataManager {
     }
 
     /**
+     * 快速发现远程用户分支（不进行数据同步）
+     * 只扫描远程仓库的分支列表，不创建或同步数据
+     */
+    suspend fun quickDiscoverUserBranches(): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val repoSettings = RepositorySettingsManager.getCurrentSettings()
+            if (!repoSettings.enabled || repoSettings.repositoryUrl.isBlank()) {
+                return@withContext Result.success(Unit)
+            }
+
+            // 使用 ls-remote 命令快速获取分支列表
+            val lsRemote = org.eclipse.jgit.api.LsRemoteCommand(null)
+                .setRemote(repoSettings.repositoryUrl)
+                .setHeads(true)
+
+            if (repoSettings.username.isNotBlank() && repoSettings.password.isNotBlank()) {
+                lsRemote.setCredentialsProvider(UsernamePasswordCredentialsProvider(repoSettings.username, repoSettings.password))
+            }
+
+            val remoteRefs = lsRemote.call()
+            val userBranches = remoteRefs.map { ref ->
+                ref.name.removePrefix("refs/heads/")
+            }.filter { branchName ->
+                // 过滤出用户分支（非main/master的分支可以认为是用户分支）
+                branchName != "main" && branchName != "master" && !branchName.contains("/")
+            }
+
+            println("快速发现 ${userBranches.size} 个远程用户分支: ${userBranches.joinToString(", ")}")
+
+            // 检查本地是否已有这些用户的数据目录
+            var foundExistingUser = false
+            for (userName in userBranches) {
+                val userDir = File(usersDir, userName)
+                if (userDir.exists()) {
+                    println("发现本地已存在用户目录: $userName")
+                    foundExistingUser = true
+                }
+            }
+
+            if (foundExistingUser) {
+                println("本地已存在用户数据，跳过数据同步")
+            } else {
+                println("本地没有用户数据，建议稍后进行数据同步")
+            }
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            println("⚠️ 快速发现用户分支失败: ${e.message}")
+            Result.failure(e)
+        }
+    }
+
+    /**
      * 发现并同步所有远程用户分支
      * 为不存在的远程用户分支创建本地用户仓库
      */

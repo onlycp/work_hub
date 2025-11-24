@@ -203,17 +203,10 @@ class LocalProxyServer(
             Logger.debug("HubLink: HTTP请求大小: ${requestData.size} bytes")
 
             // 通过HubLink转发HTTP请求
-            val response = hubLinkClient.forwardRequest(requestData).getOrNull()
-            if (response != null) {
-                output.write(response)
-                output.flush()
-                Logger.debug("HubLink: HTTP响应大小: ${response.size} bytes")
-            } else {
-                // 发送错误响应
-                val errorResponse = "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n".toByteArray()
-                output.write(errorResponse)
-                output.flush()
-            }
+            val response = hubLinkClient.forwardRequest(requestData).getOrThrow()
+            output.write(response)
+            output.flush()
+            Logger.debug("HubLink: HTTP响应大小: ${response.size} bytes")
 
         } catch (e: Exception) {
             Logger.error("HubLink: HTTP处理异常", e)
@@ -231,6 +224,8 @@ class LocalProxyServer(
 
             // 发送连接请求到服务端
             val connectResponse = hubLinkClient.forwardRequest(connectRequest).getOrThrow()
+
+            Logger.debug("HubLink: 连接响应: ${connectResponse.joinToString("") { "%02x".format(it) }}")
 
             // 解析响应
             if (!isConnectionSuccess(connectResponse)) {

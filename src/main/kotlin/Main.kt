@@ -217,6 +217,7 @@ fun main() {
         }
     }
     var shouldMinimizeToTray by remember { mutableStateOf(false) }
+    var forceWindowRedraw by remember { mutableStateOf(false) }
 
     // 监听窗口最小化状态，如果需要最小化到托盘，则隐藏窗口
     LaunchedEffect(windowState.isMinimized) {
@@ -241,71 +242,97 @@ fun main() {
     // 显示/恢复窗口的函数
     val showWindow: () -> Unit = remember {
         {
-            isWindowVisible = true
-            windowState.isMinimized = false
-            Logger.log("🔄 托盘：显示窗口")
+            Logger.log("🔄 开始恢复窗口...")
+            // 在UI线程中执行窗口恢复操作，确保状态正确更新
+            kotlinx.coroutines.MainScope().launch {
+                try {
+                    // 确保窗口可见
+                    isWindowVisible = true
+
+                    // 重置窗口状态 - 从最小化状态恢复
+                    windowState.isMinimized = false
+                    windowState.placement = WindowPlacement.Floating
+
+                    // 延迟一小段时间确保状态更新生效
+                    kotlinx.coroutines.delay(50)
+
+                    // 再次确认窗口状态
+                    if (!isWindowVisible) {
+                        isWindowVisible = true
+                    }
+                    if (windowState.isMinimized) {
+                        windowState.isMinimized = false
+                    }
+
+                    // 强制窗口重新绘制以确保显示
+                    forceWindowRedraw = !forceWindowRedraw
+
+                    Logger.log("✓ 窗口恢复完成")
+                } catch (e: Exception) {
+                    Logger.error("恢复窗口失败", e)
+                }
+            }
         }
     }
 
-    // 设置macOS Dock图标点击监听（在Window创建后设置）
+    // 在macOS上设置应用事件监听（依赖托盘图标处理Dock点击）
     DisposableEffect(Unit) {
-        Logger.log("🚀 开始设置Dock监听器...")
+        Logger.log("🎯 开始设置macOS应用事件监听器 - 最新版本")
+        println("🔥 DEBUG: 进入DisposableEffect块")
         var cleanup: (() -> Unit)? = null
 
         try {
             val osName = System.getProperty("os.name").lowercase()
-            Logger.log("🖥️ 当前操作系统: $osName")
+            Logger.log("🖥️ 当前操作系统: $osName, Java版本: ${System.getProperty("java.version")}")
             if (osName.contains("mac")) {
-                // 使用反射调用Desktop API（兼容不同JDK版本）
-                val desktopClass = Class.forName("java.awt.Desktop")
-                val isDesktopSupportedMethod = desktopClass.getMethod("isDesktopSupported")
-                val isSupported = isDesktopSupportedMethod.invoke(null) as Boolean
-                Logger.log("🖥️ Desktop支持: $isSupported")
+                Logger.log("🍎 检测到macOS，开始设置应用事件监听器")
+                // 设置AppEventListener来监听应用事件
+                try {
+                    Logger.log("🖥️ 尝试设置AppEventListener...")
+                    val appEventListenerClass = Class.forName("com.apple.eawt.AppEventListener")
 
-                if (isSupported) {
-                    val getDesktopMethod = desktopClass.getMethod("getDesktop")
-                    val desktop = getDesktopMethod.invoke(null)
-
-                    // 尝试设置AppReopenedListener
-                    try {
-                        val actionClass = Class.forName("java.awt.Desktop\$Action")
-                        val appReopenAction = actionClass.enumConstants.find {
-                            it.toString() == "APP_REOPEN"
-                        }
-                        Logger.log("🖥️ APP_REOPEN action找到: ${appReopenAction != null}")
-
-                        if (appReopenAction != null) {
-                            val isSupportedMethod = desktopClass.getMethod("isSupported", actionClass)
-                            val actionSupported = isSupportedMethod.invoke(desktop, appReopenAction) as Boolean
-                            Logger.log("🖥️ APP_REOPEN支持: $actionSupported")
-
-                            if (actionSupported) {
-                                val listenerClass = Class.forName("java.awt.desktop.AppReopenedListener")
-                                val proxy = java.lang.reflect.Proxy.newProxyInstance(
-                                    listenerClass.classLoader,
-                                    arrayOf(listenerClass)
-                                ) { _, _, _ ->
-                                    Logger.log("🖱️ Dock图标被点击！")
-                                    showWindow()
-                                    null
-                                }
-
-                                val setListenerMethod = desktopClass.getMethod("setAppReopenedListener", listenerClass)
-                                setListenerMethod.invoke(desktop, proxy)
-                                Logger.log("✓ macOS Dock图标监听已设置")
-                            } else {
-                                Logger.log("⚠️ 系统不支持APP_REOPEN action")
+                    // 创建AppEventListener代理
+                    val appEventProxy = java.lang.reflect.Proxy.newProxyInstance(
+                        appEventListenerClass.classLoader,
+                        arrayOf(appEventListenerClass)
+                    ) { proxyInstance, method, args ->
+                        Logger.log("🚨 AppEventListener事件: ${method.name}")
+                        when (method.name) {
+                            "appReOpened" -> {
+                                Logger.log("🍎 应用被重新打开! (appReOpened) - 恢复窗口")
+                                showWindow()
                             }
-                        } else {
-                            Logger.log("⚠️ 未找到APP_REOPEN action")
+                            "appActivated" -> {
+                                Logger.log("🍎 应用被激活! (appActivated)")
+                                // 当应用被激活时，如果窗口不可见就恢复它
+                                if (!isWindowVisible) {
+                                    Logger.log("🍎 检测到窗口不可见，自动恢复窗口")
+                                    showWindow()
+                                }
+                            }
+                            else -> {
+                                Logger.log("🍎 其他应用事件: ${method.name}")
+                            }
                         }
-                    } catch (e: Exception) {
-                        Logger.error("设置Dock监听失败（可能是JDK版本不支持）", e)
+                        null
                     }
+
+                    // 获取Application实例并设置监听器
+                    val appClass = Class.forName("com.apple.eawt.Application")
+                    val getApplicationMethod = appClass.getMethod("getApplication")
+                    val application = getApplicationMethod.invoke(null)
+
+                    val addAppEventListenerMethod = appClass.getMethod("addAppEventListener", appEventListenerClass)
+                    addAppEventListenerMethod.invoke(application, appEventProxy)
+
+                    Logger.log("✅ macOS AppEventListener 已设置")
+
+                } catch (e: Exception) {
+                    Logger.log("⚠️ 设置AppEventListener失败: ${e.message}")
                 }
             }
         } catch (e: Exception) {
-            Logger.error("设置Dock监听失败", e)
+            Logger.error("设置macOS应用事件监听失败", e)
         }
 
         onDispose {
@@ -335,10 +362,39 @@ fun main() {
         }
     )
 
+    // 监听窗口恢复信号，确保窗口正确显示
+    LaunchedEffect(forceWindowRedraw) {
+        if (isWindowVisible) {
+            Logger.log("🔄 检测到窗口恢复信号，执行额外激活...")
+            // 短暂延迟后尝试再次激活窗口
+            kotlinx.coroutines.delay(100)
+
+            // 在macOS上额外尝试激活窗口
+            try {
+                val osName = System.getProperty("os.name").lowercase()
+                if (osName.contains("mac")) {
+                    val appClass = Class.forName("com.apple.eawt.Application")
+                    val getApplicationMethod = appClass.getMethod("getApplication")
+                    val application = getApplicationMethod.invoke(null)
+
+                    try {
+                        val requestForegroundMethod = appClass.getMethod("requestForeground", Boolean::class.java)
+                        requestForegroundMethod.invoke(application, false) // 使用false参数避免强制前台
+                        Logger.log("✓ 额外macOS窗口激活已尝试")
+                    } catch (e: Exception) {
+                        Logger.log("⚠️ 额外macOS激活失败: ${e.message}")
+                    }
+                }
+            } catch (e: Exception) {
+                Logger.log("⚠️ 额外窗口激活失败: ${e.message}")
+            }
+        }
+    }
+
     Logger.log("🪟 准备创建 Window composable，isWindowVisible = $isWindowVisible")
     Window(
         onCloseRequest = {
-            // 点击关闭按钮时最小化到托盘
+            // 点击关闭按钮时隐藏窗口到托盘
             shouldMinimizeToTray = true
             windowState.isMinimized = true
         },

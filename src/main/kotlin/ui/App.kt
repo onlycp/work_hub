@@ -249,7 +249,11 @@ fun App(onLogout: () -> Unit = {}) {
         scope.launch {
             try {
                 statusMessage = "${if (enable) "启用" else "禁用"}系统代理..."
-                val result = SystemProxySetter.setProxy(host, port, enable)
+                val result = if (enable) {
+                    SystemProxyManager.enableProxy(host, port)
+                } else {
+                    SystemProxyManager.disableProxy()
+                }
                 if (result.isSuccess) {
                     statusMessage = "系统代理已${if (enable) "启用" else "禁用"}"
                     Logger.info("系统代理设置成功: ${if (enable) "启用" else "禁用"} $host:$port")
@@ -325,6 +329,45 @@ fun App(onLogout: () -> Unit = {}) {
 
             // 初始化首页配置管理器
             IndexConfigManager.setCurrentUser(CurrentUserManager.getCurrentUserId())
+
+            // 登录后的自动数据同步（在主界面加载完成后执行）
+            Logger.info("主界面加载完成，开始自动数据同步")
+            val repoSettings = data.RepositorySettingsManager.getCurrentSettings()
+            if (repoSettings.enabled && repoSettings.repositoryUrl.isNotBlank()) {
+                try {
+                    statusMessage = "正在同步远程数据..."
+                    Logger.info("开始自动同步远程数据")
+
+                    // 执行完整的数据同步
+                    val syncResult = GitDataManager.syncAllBranches()
+                    if (syncResult.isSuccess) {
+                        // 重新加载数据以确保最新数据被应用
+                        val currentUser = CurrentUserManager.getCurrentUserId()
+                        SSHConfigManager.setCurrentUser(currentUser)
+                        KeyManager.setCurrentUser(currentUser)
+                        CursorRuleManager.setCurrentUser(currentUser)
+                        MemberManager.setCurrentUser(currentUser)
+                        ExpenseManager.setCurrentUser(currentUser)
+
+                        // 重新加载SSH和HubLink配置
+                        sshConfigs = SSHConfigManager.getAllConfigs()
+                        HubLinkManager.setCurrentUser(currentUser)
+                        hublinkConfigs = HubLinkManager.getAllConfigs()
+
+                        statusMessage = "数据同步完成"
+                        Logger.info("自动数据同步成功")
+                    } else {
+                        statusMessage = "数据同步失败: ${syncResult.exceptionOrNull()?.message}"
+                        Logger.error("自动数据同步失败: ${syncResult.exceptionOrNull()?.message}")
+                    }
+                } catch (e: Exception) {
+                    statusMessage = "数据同步异常: ${e.message}"
+                    Logger.error("自动数据同步异常: ${e.message}", e)
+                }
+            } else {
+                statusMessage = "应用已就绪"
+                Logger.info("仓库未配置，跳过自动数据同步")
+            }
         } catch (e: Exception) {
             Logger.error("数据加载失败: ${e.message}", e)
             statusMessage = "数据加载失败: ${e.message}"

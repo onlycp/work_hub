@@ -101,23 +101,20 @@ object AppInitializer {
             val repoSettings = RepositorySettingsManager.getCurrentSettings()
 
             if (repoSettings.enabled && repoSettings.repositoryUrl.isNotBlank()) {
-                // 仓库已配置，检查本地是否有用户数据
+                // 仓库已配置，只扫描本地成员分支是否存在，不进行同步
                 val currentMergedData = GitDataManager.getAllMergedData()
 
                 if (currentMergedData.members.isEmpty()) {
-                    // 本地没有用户数据，同步远程用户分支
-                    println("正在发现并同步远程用户分支...")
-                    val discoverResult = GitDataManager.discoverAndSyncUserBranches()
+                    // 本地没有用户数据，快速发现远程用户分支（不进行数据同步）
+                    println("正在快速发现远程用户分支...")
+                    val discoverResult = GitDataManager.quickDiscoverUserBranches()
                     if (discoverResult.isFailure) {
-                        println("⚠️ 用户分支发现失败，继续本地检查: ${discoverResult.exceptionOrNull()?.message}")
+                        println("⚠️ 用户分支快速发现失败，继续本地检查: ${discoverResult.exceptionOrNull()?.message}")
                     }
                 } else {
-                    // 有用户数据，同步现有数据
-                    println("同步现有用户数据...")
-                    val syncResult = GitDataManager.syncAllBranches()
-                    if (syncResult.isFailure) {
-                        println("⚠️ 用户数据同步失败: ${syncResult.exceptionOrNull()?.message}")
-                    }
+                    // 有用户数据，只进行本地数据合并，不进行远程同步
+                    println("合并现有本地用户数据...")
+                    GitDataManager.mergeAllUserData()
                 }
             } else {
                 // 仓库未配置，只合并本地数据
@@ -169,13 +166,7 @@ object AppInitializer {
             // 设置当前用户
             CurrentUserManager.setCurrentUser(userName, userName)
 
-            // 同步数据以确保用户数据被正确合并
-            val syncResult = GitDataManager.syncAllBranches()
-            if (syncResult.isFailure) {
-                println("数据同步失败: ${syncResult.exceptionOrNull()?.message}")
-            }
-
-            // 更新所有管理器
+            // 更新所有管理器（数据同步将在主界面加载时进行）
             updateAllManagers(userName)
 
             println("用户 $userName 登录成功")

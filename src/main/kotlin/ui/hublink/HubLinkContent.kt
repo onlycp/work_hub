@@ -399,7 +399,7 @@ fun HubLinkDetailPanel(
 
         // 系统代理设置卡片
         item {
-            SystemProxyCard()
+            SystemProxyCard(config = config, clientManager = clientManager)
         }
 
         // 添加底部间距

@@ -1,5 +1,7 @@
 package ui.home
 
+import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -12,12 +14,14 @@ import androidx.compose.foundation.ContextMenuItem
 import androidx.compose.material3.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -26,6 +30,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlin.math.max
 import data.*
+import data.SystemProxyManager
+import kotlinx.coroutines.launch
 import theme.*
 
 /**
@@ -130,6 +136,10 @@ fun HomeContent(
     var showProxyConfigDialog by remember { mutableStateOf(false) }
     var showHostConfigDialog by remember { mutableStateOf(false) }
 
+    // 分组展开状态
+    var proxyGroupExpanded by remember { mutableStateOf(true) }
+    var hostGroupExpanded by remember { mutableStateOf(true) }
+
     // 初始化配置管理器并监听配置变化
     val indexConfig by IndexConfigManager.config.collectAsState()
 
@@ -149,6 +159,8 @@ fun HomeContent(
                 title = "代理服务",
                 icon = Icons.Default.VpnLock,
                 onSettingsClick = { showProxyConfigDialog = true },
+                expanded = proxyGroupExpanded,
+                onExpandedChange = { proxyGroupExpanded = it },
                 content = {
                     val visibleProxies = hublinkConfigs.filter { config ->
                         val visibleIds = indexConfig?.visibleProxyIds ?: emptySet()
@@ -181,6 +193,8 @@ fun HomeContent(
                 title = "主机连接",
                 icon = Icons.Default.Computer,
                 onSettingsClick = { showHostConfigDialog = true },
+                expanded = hostGroupExpanded,
+                onExpandedChange = { hostGroupExpanded = it },
                 content = {
                     val visibleHosts = sshConfigs.filter { config ->
                         val visibleIds = indexConfig?.visibleHostIds ?: emptySet()
@@ -195,7 +209,7 @@ fun HomeContent(
                         }
                     } else {
                         HostCardsGrid(
-                            configs = visibleHosts.take(8),
+                            configs = visibleHosts,
                             connectionStates = sshConnectionStates,
                             onConnect = onSSHConnect,
                             onDisconnect = onSSHDisconnect,
@@ -255,13 +269,15 @@ fun HomeContent(
 }
 
 /**
- * 操作分组组件 - 带轮廓和背景
+ * 操作分组组件 - 带轮廓和背景，支持收缩展开
  */
 @Composable
 private fun ActionGroup(
     title: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     onSettingsClick: (() -> Unit)? = null,
+    expanded: Boolean = true,
+    onExpandedChange: ((Boolean) -> Unit)? = null,
     content: @Composable () -> Unit
 ) {
     Card(
@@ -276,10 +292,18 @@ private fun ActionGroup(
         )
     ) {
         Column(modifier = Modifier.padding(AppDimensions.PaddingM)) {
-            // 分组标题 - 更突出的样式
+            // 分组标题 - 更突出的样式，支持点击展开/收缩
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(bottom = AppDimensions.SpaceM)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = if (expanded) AppDimensions.SpaceM else 0.dp)
+                    .clickable(
+                        enabled = onExpandedChange != null,
+                        onClick = { onExpandedChange?.invoke(!expanded) }
+                    )
+                    .padding(horizontal = 4.dp, vertical = 2.dp)
+                    .clip(RoundedCornerShape(4.dp))
             ) {
                 // 图标容器 - 添加背景
                 Box(
@@ -306,6 +330,21 @@ private fun ActionGroup(
                     modifier = Modifier.weight(1f)
                 )
 
+                // 展开/收缩按钮
+                onExpandedChange?.let {
+                    IconButton(
+                        onClick = { it(!expanded) },
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (expanded) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
+                            contentDescription = if (expanded) "收缩" else "展开",
+                            tint = AppColors.TextSecondary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+
                 // 设置按钮
                 onSettingsClick?.let {
                     IconButton(
@@ -322,8 +361,14 @@ private fun ActionGroup(
                 }
             }
 
-            // 内容区域
-            content()
+            // 内容区域 - 带动画效果
+            AnimatedVisibility(
+                visible = expanded,
+                enter = fadeIn(animationSpec = tween(300)) + expandVertically(animationSpec = tween(300)),
+                exit = fadeOut(animationSpec = tween(200)) + shrinkVertically(animationSpec = tween(200))
+            ) {
+                content()
+            }
         }
     }
 }
@@ -595,7 +640,11 @@ private fun ProxyMiniCard(
             // 底部：操作按钮 - macOS风格的紧凑布局
             when (state) {
                 is HubLinkState.Connected -> {
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         // 断开连接按钮
                         Box(
                             modifier = Modifier
@@ -615,25 +664,30 @@ private fun ProxyMiniCard(
                             )
                         }
 
-                        // 系统代理按钮
-                        Box(
-                            modifier = Modifier
-                                .size(24.dp)
-                                .background(
-                                    color = if (isSystemProxyEnabled) AppColors.Success else AppColors.Primary,
-                                    shape = RoundedCornerShape(6.dp)
-                                )
-                                .clickable {
-                                    onSetSystemProxy(!isSystemProxyEnabled)
-                                    isSystemProxyEnabled = !isSystemProxyEnabled
-                                },
-                            contentAlignment = Alignment.Center
+                        // 系统代理开关 - 放在右侧
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Icon(
-                                if (isSystemProxyEnabled) Icons.Default.Clear else Icons.Default.Settings,
-                                null,
-                                Modifier.size(12.dp),
-                                tint = Color.White
+                            Text(
+                                text = "系统",
+                                style = AppTypography.Caption,
+                                color = AppColors.TextSecondary,
+                                modifier = Modifier.offset(y = (-1).dp)
+                            )
+                            Switch(
+                                checked = isSystemProxyEnabled,
+                                onCheckedChange = { enabled ->
+                                    onSetSystemProxy(enabled)
+                                    isSystemProxyEnabled = enabled
+                                },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = Color.White,
+                                    checkedTrackColor = AppColors.Success,
+                                    uncheckedThumbColor = Color.White,
+                                    uncheckedTrackColor = AppColors.TextDisabled.copy(alpha = 0.5f)
+                                ),
+                                modifier = Modifier.graphicsLayer(scaleX = 0.7f, scaleY = 0.7f)
                             )
                         }
                     }
