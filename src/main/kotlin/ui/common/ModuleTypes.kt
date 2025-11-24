@@ -33,5 +33,6 @@ enum class OpsDrawerTab(
 ) {
     COMMANDS("命令", Icons.Default.Terminal),
     PORT_FORWARDING("端口", Icons.Default.Cable),
+    MONITORING("监控", Icons.Default.Monitor),
     FILE_MANAGER("文件", Icons.Default.Folder)
 }

@@ -22,6 +22,18 @@ import ui.common.OpsDrawerTab
 import java.io.File
 
 /**
+ * 主机系统监控信息
+ */
+data class SystemMetrics(
+    val cpuUsage: Float = 0f,      // CPU使用率 (0-100)
+    val memoryUsage: Float = 0f,   // 内存使用率 (0-100)
+    val memoryUsed: Long = 0L,     // 已使用内存 (MB)
+    val memoryTotal: Long = 0L,    // 总内存 (MB)
+    val systemVersion: String = "", // 系统版本信息
+    val lastUpdate: Long = 0L       // 最后更新时间
+)
+
+/**
  * 运维主操作区内容（两个卡片）
  */
 @Composable
@@ -53,6 +65,9 @@ fun OpsMainContent(
 ) {
     val scope = rememberCoroutineScope()
     val isConnected = sshConnectionStates[config.id] == true
+
+    // 系统监控状态
+    val systemMetrics = remember { mutableStateOf(SystemMetrics()) }
 
     // 默认的终端打开逻辑
     val defaultOpenTerminal: (String) -> Unit = { configId ->
@@ -116,6 +131,18 @@ fun OpsMainContent(
         }
     }
 
+    // 获取系统版本信息（只在连接时获取一次）
+    LaunchedEffect(config.id, isConnected) {
+        // 当主机切换或首次连接时，重置版本信息
+        if (isConnected) {
+            val version = fetchSystemVersion(config)
+            systemMetrics.value = systemMetrics.value.copy(systemVersion = version)
+        } else {
+            // 断开连接时清空版本信息
+            systemMetrics.value = systemMetrics.value.copy(systemVersion = "")
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -137,21 +164,38 @@ fun OpsMainContent(
                 // 卡片标题
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Settings,
-                        contentDescription = "状态",
-                        tint = AppColors.Primary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(AppDimensions.SpaceS))
-                    Text(
-                        text = "连接状态",
-                        style = AppTypography.BodyLarge,
-                        color = AppColors.TextPrimary,
-                        fontWeight = FontWeight.Bold
-                    )
+                    // 左侧：图标和标题
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "状态",
+                            tint = AppColors.Primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(AppDimensions.SpaceS))
+                        Text(
+                            text = "连接状态",
+                            style = AppTypography.BodyLarge,
+                            color = AppColors.TextPrimary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    // 右侧：系统版本信息（仅在连接时显示）
+                    if (isConnected && systemMetrics.value.systemVersion.isNotEmpty()) {
+                        Text(
+                            text = systemMetrics.value.systemVersion,
+                            style = AppTypography.BodySmall,
+                            color = AppColors.Primary,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(AppDimensions.SpaceM))
@@ -954,6 +998,71 @@ private suspend fun testTerminalFunctionality(): Result<String> {
             }
         } catch (e: Exception) {
             Result.failure(e)
+        }
+    }
+}
+
+/**
+ * 获取系统版本信息
+ */
+suspend fun fetchSystemVersion(config: SSHConfigData): String {
+    return withContext(Dispatchers.IO) {
+        try {
+            val sessionManager = service.SSHSessionManager.getSession(config.name)
+            if (sessionManager == null || !sessionManager.isConnected()) {
+                return@withContext ""
+            }
+
+            // 检测操作系统类型
+            val osResult = sessionManager.executeCommand("uname -s")
+
+            // 根据操作系统获取版本信息
+            val versionResult = when (osResult.getOrNull()?.trim()?.lowercase()) {
+                "darwin" -> {
+                    // macOS
+                    sessionManager.executeCommand("sw_vers | grep ProductVersion | cut -d':' -f2 | tr -d '[:space:]'")
+                }
+                "linux" -> {
+                    // Linux - 多重检测方式，按优先级尝试
+                    var versionResult: Result<String>? = null
+
+                    // 方法1: lsb_release (Debian/Ubuntu系)
+                    versionResult = sessionManager.executeCommand("lsb_release -d 2>/dev/null | cut -d':' -f2 | tr -d '\t' | sed 's/^ *//'")
+                    if (versionResult.isSuccess && versionResult.getOrNull()?.trim()?.isNotEmpty() == true) {
+                        versionResult
+                    } else {
+                        // 方法2: /etc/os-release (现代Linux发行版)
+                        versionResult = sessionManager.executeCommand("grep '^PRETTY_NAME=' /etc/os-release 2>/dev/null | cut -d'=' -f2 | tr -d '\"'")
+                        if (versionResult.isSuccess && versionResult.getOrNull()?.trim()?.isNotEmpty() == true) {
+                            versionResult
+                        } else {
+                            // 方法3: 特定发行版文件 (RHEL/CentOS/Rocky/AlmaLinux等)
+                            versionResult = sessionManager.executeCommand("cat /etc/rocky-release 2>/dev/null || cat /etc/redhat-release 2>/dev/null || cat /etc/centos-release 2>/dev/null || cat /etc/almalinux-release 2>/dev/null | head -1 | sed 's/ release / /' | sed 's/ ([^)]*)//'")
+                            if (versionResult.isSuccess && versionResult.getOrNull()?.trim()?.isNotEmpty() == true) {
+                                versionResult
+                            } else {
+                                // 方法4: /etc/issue (传统方式)
+                                versionResult = sessionManager.executeCommand("head -1 /etc/issue 2>/dev/null | sed 's/ \\\\.*$//' | sed 's/ *$//'")
+                                if (versionResult.isSuccess && versionResult.getOrNull()?.trim()?.isNotEmpty() == true) {
+                                    versionResult
+                                } else {
+                                    // 方法5: 内核版本 (最后手段)
+                                    sessionManager.executeCommand("uname -r")
+                                }
+                            }
+                        }
+                    }
+                }
+                else -> {
+                    // 其他系统
+                    sessionManager.executeCommand("uname -r")
+                }
+            }
+
+            versionResult.getOrNull()?.trim() ?: ""
+        } catch (e: Exception) {
+            println("获取系统版本信息失败: ${e.message}")
+            ""
         }
     }
 }

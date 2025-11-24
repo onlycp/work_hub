@@ -124,6 +124,12 @@ fun OpsDrawerPanel(
                             onEditingPortRule = onEditingPortRule
                         )
                     }
+                    ui.common.OpsDrawerTab.MONITORING -> {
+                        SystemMonitoringTabContent(
+                            config = config,
+                            isConnected = isConnected
+                        )
+                    }
                     ui.common.OpsDrawerTab.FILE_MANAGER -> {
                         FileManagerTabContent(
                             config = config,

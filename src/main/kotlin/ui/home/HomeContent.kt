@@ -1,7 +1,7 @@
 package ui.home
 
 import androidx.compose.animation.*
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -11,6 +11,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.window.Dialog
 import androidx.compose.foundation.ContextMenuArea
 import androidx.compose.foundation.ContextMenuItem
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.material3.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -28,11 +31,131 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlin.math.max
 import data.*
 import data.SystemProxyManager
 import kotlinx.coroutines.launch
 import theme.*
+
+/**
+ * 配置项数据类
+ */
+data class ConfigItem(
+    val id: String,
+    val name: String,
+    val subtitle: String,
+    val isSelected: Boolean
+)
+
+/**
+ * 首页配置对话框 - 简化版本
+ */
+@Composable
+private fun IndexConfigDialog(
+    title: String,
+    items: List<ConfigItem>,
+    onDismiss: () -> Unit,
+    onConfirm: (Set<String>) -> Unit
+) {
+    var selectedIds by remember { mutableStateOf(items.filter { it.isSelected }.map { it.id }.toSet()) }
+
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 500.dp),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Column(modifier = Modifier.padding(AppDimensions.PaddingL)) {
+                // 标题
+                Text(
+                    text = title,
+                    style = AppTypography.TitleLarge,
+                    color = AppColors.TextPrimary,
+                    modifier = Modifier.padding(bottom = AppDimensions.SpaceL)
+                )
+
+                // 配置项列表
+                if (items.isEmpty()) {
+                    Text("无配置项", style = AppTypography.BodyMedium, color = AppColors.TextSecondary)
+                } else {
+                    Column(modifier = Modifier.weight(1f)) {
+                        // 只显示前几个项目，避免界面太长
+                        items.take(10).forEach { item ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        selectedIds = if (selectedIds.contains(item.id)) {
+                                            selectedIds - item.id
+                                        } else {
+                                            selectedIds + item.id
+                                        }
+                                    }
+                                    .padding(vertical = AppDimensions.SpaceS),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Checkbox(
+                                    checked = selectedIds.contains(item.id),
+                                    onCheckedChange = null // 由点击处理
+                                )
+
+                                Spacer(modifier = Modifier.width(AppDimensions.SpaceM))
+
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = item.name,
+                                        style = AppTypography.BodyMedium,
+                                        color = AppColors.TextPrimary
+                                    )
+                                    Text(
+                                        text = item.subtitle,
+                                        style = AppTypography.Caption,
+                                        color = AppColors.TextSecondary
+                                    )
+                                }
+                            }
+                        }
+                        if (items.size > 10) {
+                            Text(
+                                text = "还有 ${items.size - 10} 个项目...",
+                                style = AppTypography.Caption,
+                                color = AppColors.TextSecondary,
+                                modifier = Modifier.padding(vertical = AppDimensions.SpaceS)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(AppDimensions.SpaceL))
+
+                // 操作按钮
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = onDismiss) {
+                        Text("取消", color = AppColors.TextSecondary)
+                    }
+
+                    Spacer(modifier = Modifier.width(AppDimensions.SpaceM))
+
+                    Button(
+                        onClick = { onConfirm(selectedIds) },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = AppColors.Primary,
+                            contentColor = Color.White
+                        )
+                    ) {
+                        Text("确定")
+                    }
+                }
+            }
+        }
+    }
+}
 
 /**
  * 自适应列数计算器
@@ -469,7 +592,7 @@ private fun ProxyCardsGrid(
 }
 
 /**
- * 代理小卡片 - macOS风格设计
+ * 代理小卡片 - 增强版macOS风格设计
  */
 @Composable
 private fun ProxyMiniCard(
@@ -480,78 +603,110 @@ private fun ProxyMiniCard(
     onSetSystemProxy: (Boolean) -> Unit
 ) {
     var isSystemProxyEnabled by remember { mutableStateOf(false) }
+    val interactionSource = remember { MutableInteractionSource() }
+    val isHovered by interactionSource.collectIsHoveredAsState()
 
-    // 根据状态确定视觉风格 - 增强对比度
+    // 动画状态
+    val animatedElevation by animateDpAsState(
+        targetValue = if (isHovered) 12.dp else 6.dp,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
+        label = "elevation"
+    )
+
+    val animatedScale by animateFloatAsState(
+        targetValue = if (isHovered) 1.02f else 1.0f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
+        label = "scale"
+    )
+
+    // 根据状态确定视觉风格 - 更丰富的渐变和颜色
     val backgroundBrush: Brush
     val borderColor: Color
     val iconTint: Color
     val statusColor: Color
+    val glowColor: Color
 
     when (state) {
         is HubLinkState.Connected -> {
             backgroundBrush = Brush.verticalGradient(
                 colors = listOf(
-                    Color(0xFFF0F8F0), // 浅绿色背景
-                    Color(0xFFE8F5E8)
+                    Color(0xFFF0F9F0), // 更柔和的绿色渐变
+                    Color(0xFFE8F8E8),
+                    Color(0xFFE1F5E1)
                 )
             )
-            borderColor = AppColors.Success.copy(alpha = 0.4f)
+            borderColor = AppColors.Success.copy(alpha = 0.6f)
             iconTint = AppColors.Success
             statusColor = AppColors.Success
+            glowColor = AppColors.Success.copy(alpha = 0.1f)
         }
         is HubLinkState.Connecting -> {
             backgroundBrush = Brush.verticalGradient(
                 colors = listOf(
-                    Color(0xFFFFF8E1), // 浅橙色背景
-                    Color(0xFFFFF3C4)
+                    Color(0xFFFFF9E6), // 更温暖的橙色渐变
+                    Color(0xFFFFF5D6),
+                    Color(0xFFFFF2C2)
                 )
             )
-            borderColor = AppColors.Warning.copy(alpha = 0.4f)
+            borderColor = AppColors.Warning.copy(alpha = 0.6f)
             iconTint = AppColors.Warning
             statusColor = AppColors.Warning
+            glowColor = AppColors.Warning.copy(alpha = 0.1f)
         }
         is HubLinkState.Error -> {
             backgroundBrush = Brush.verticalGradient(
                 colors = listOf(
-                    Color(0xFFFFEBEE), // 浅红色背景
-                    Color(0xFFFFCDD2)
+                    Color(0xFFFFF0F0), // 更柔和的红色渐变
+                    Color(0xFFFFE6E6),
+                    Color(0xFFFFDCDC)
                 )
             )
-            borderColor = AppColors.Error.copy(alpha = 0.5f)
+            borderColor = AppColors.Error.copy(alpha = 0.7f)
             iconTint = AppColors.Error
             statusColor = AppColors.Error
+            glowColor = AppColors.Error.copy(alpha = 0.1f)
         }
         else -> {
             backgroundBrush = Brush.verticalGradient(
                 colors = listOf(
-                    Color(0xFFFAFBFC), // 非常浅的蓝色调背景
-                    Color(0xFFF1F3F4)
+                    Color(0xFFFCFCFD), // 更精致的默认渐变
+                    Color(0xFFF8F9FA),
+                    Color(0xFFF4F5F6)
                 )
             )
-            borderColor = Color(0xFFE3F2FD) // 浅蓝色边框
+            borderColor = Color(0xFFE8F0FE).copy(alpha = 0.8f)
             iconTint = AppColors.TextSecondary
             statusColor = AppColors.TextDisabled
+            glowColor = AppColors.Primary.copy(alpha = 0.05f)
         }
     }
 
-    // macOS风格的卡片容器 - 增强对比度
+    // 增强版macOS风格的卡片容器
     Box(
         modifier = Modifier
             .width(140.dp)
             .height(110.dp)
+            .graphicsLayer {
+                scaleX = animatedScale
+                scaleY = animatedScale
+            }
             .shadow(
-                elevation = 6.dp,
+                elevation = animatedElevation,
                 shape = RoundedCornerShape(12.dp),
-                spotColor = AppColors.Shadow.copy(alpha = 0.15f)
+                spotColor = if (isHovered) glowColor.copy(alpha = 0.3f) else AppColors.Shadow.copy(alpha = 0.15f)
             )
             .clip(RoundedCornerShape(12.dp))
             .background(backgroundBrush)
             .border(
-                width = 1.dp,
-                color = borderColor,
+                width = if (isHovered) 1.5.dp else 1.dp,
+                color = if (isHovered) borderColor.copy(alpha = 0.8f) else borderColor,
                 shape = RoundedCornerShape(12.dp)
             )
-            .clickable {
+            .hoverable(interactionSource)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null
+            ) {
                 when (state) {
                     is HubLinkState.Connected -> onDisconnect()
                     is HubLinkState.Connecting -> {} // 连接中不响应
@@ -560,19 +715,27 @@ private fun ProxyMiniCard(
             }
     ) {
         Column(modifier = Modifier.padding(AppDimensions.SpaceS)) {
-            // 顶部：图标和状态指示器
+            // 顶部：图标和状态指示器 - 增强版设计
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.Top
             ) {
-                // 图标容器 - macOS风格的圆形背景
+                // 图标容器 - 增强版macOS风格
                 Box(
                     modifier = Modifier
-                        .size(24.dp)
+                        .size(26.dp)
                         .background(
-                            color = iconTint.copy(alpha = 0.1f),
-                            shape = RoundedCornerShape(6.dp)
+                            color = if (isHovered)
+                                iconTint.copy(alpha = 0.15f)
+                            else
+                                iconTint.copy(alpha = 0.1f),
+                            shape = RoundedCornerShape(7.dp)
+                        )
+                        .shadow(
+                            elevation = if (isHovered) 2.dp else 1.dp,
+                            shape = RoundedCornerShape(7.dp),
+                            spotColor = iconTint.copy(alpha = 0.2f)
                         ),
                     contentAlignment = Alignment.Center
                 ) {
@@ -580,26 +743,31 @@ private fun ProxyMiniCard(
                         imageVector = Icons.Default.VpnLock,
                         contentDescription = null,
                         tint = iconTint,
-                        modifier = Modifier.size(14.dp)
+                        modifier = Modifier.size(15.dp)
                     )
                 }
 
-                // 状态指示点 - macOS风格的光晕效果
+                // 状态指示点 - 增强版光晕效果
                 Box(
                     modifier = Modifier
-                        .size(10.dp)
+                        .size(12.dp)
                         .background(
-                            color = statusColor.copy(alpha = 0.2f),
+                            color = statusColor.copy(alpha = if (isHovered) 0.3f else 0.2f),
                             shape = RoundedCornerShape(50)
                         ),
                     contentAlignment = Alignment.Center
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(6.dp)
+                            .size(if (isHovered) 7.dp else 6.dp)
                             .background(
                                 color = statusColor,
                                 shape = RoundedCornerShape(50)
+                            )
+                            .shadow(
+                                elevation = 1.dp,
+                                shape = RoundedCornerShape(50),
+                                spotColor = statusColor.copy(alpha = 0.5f)
                             )
                     )
                 }
@@ -607,29 +775,41 @@ private fun ProxyMiniCard(
 
             Spacer(modifier = Modifier.height(AppDimensions.SpaceXS))
 
-            // 中间：名称和地址分开显示 - 两行布局
+            // 中间：名称和地址分开显示 - 优化布局
             Box(
                 modifier = Modifier.weight(1f),
                 contentAlignment = Alignment.Center
             ) {
                 Column(
                     horizontalAlignment = Alignment.Start,
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                    verticalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
-                    // 代理名称
+                    // 代理名称 - 增强版样式
                     Text(
                         text = config.name,
-                        style = AppTypography.BodySmall.copy(fontWeight = FontWeight.Medium),
-                        color = AppColors.TextPrimary,
+                        style = AppTypography.BodySmall.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            letterSpacing = 0.1.sp
+                        ),
+                        color = if (isHovered)
+                            AppColors.TextPrimary.copy(alpha = 0.9f)
+                        else
+                            AppColors.TextPrimary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    // 代理地址
+                    // 代理地址 - 更精细的样式
                     Text(
                         text = "${config.host}:${config.port}",
-                        style = AppTypography.Caption,
-                        color = AppColors.TextSecondary,
+                        style = AppTypography.Caption.copy(
+                            fontWeight = FontWeight.Normal,
+                            letterSpacing = 0.05.sp
+                        ),
+                        color = if (isHovered)
+                            AppColors.TextSecondary.copy(alpha = 0.8f)
+                        else
+                            AppColors.TextSecondary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.fillMaxWidth()
@@ -637,7 +817,7 @@ private fun ProxyMiniCard(
                 }
             }
 
-            // 底部：操作按钮 - macOS风格的紧凑布局
+            // 底部：操作按钮 - 增强版macOS风格
             when (state) {
                 is HubLinkState.Connected -> {
                     Row(
@@ -645,13 +825,21 @@ private fun ProxyMiniCard(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // 断开连接按钮
+                        // 断开连接按钮 - 增强版设计
                         Box(
                             modifier = Modifier
-                                .size(24.dp)
+                                .size(26.dp)
                                 .background(
-                                    color = AppColors.Error,
-                                    shape = RoundedCornerShape(6.dp)
+                                    color = if (isHovered)
+                                        AppColors.Error.copy(alpha = 0.9f)
+                                    else
+                                        AppColors.Error,
+                                    shape = RoundedCornerShape(7.dp)
+                                )
+                                .shadow(
+                                    elevation = if (isHovered) 3.dp else 1.dp,
+                                    shape = RoundedCornerShape(7.dp),
+                                    spotColor = AppColors.Error.copy(alpha = 0.3f)
                                 )
                                 .clickable { onDisconnect() },
                             contentAlignment = Alignment.Center
@@ -659,20 +847,26 @@ private fun ProxyMiniCard(
                             Icon(
                                 Icons.Default.Stop,
                                 null,
-                                Modifier.size(12.dp),
+                                Modifier.size(13.dp),
                                 tint = Color.White
                             )
                         }
 
-                        // 系统代理开关 - 放在右侧
+                        // 系统代理开关 - 优化布局
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             Text(
                                 text = "系统",
-                                style = AppTypography.Caption,
-                                color = AppColors.TextSecondary,
+                                style = AppTypography.Caption.copy(
+                                    fontWeight = FontWeight.Medium,
+                                    letterSpacing = 0.05.sp
+                                ),
+                                color = if (isHovered)
+                                    AppColors.TextSecondary.copy(alpha = 0.9f)
+                                else
+                                    AppColors.TextSecondary,
                                 modifier = Modifier.offset(y = (-1).dp)
                             )
                             Switch(
@@ -685,7 +879,7 @@ private fun ProxyMiniCard(
                                     checkedThumbColor = Color.White,
                                     checkedTrackColor = AppColors.Success,
                                     uncheckedThumbColor = Color.White,
-                                    uncheckedTrackColor = AppColors.TextDisabled.copy(alpha = 0.5f)
+                                    uncheckedTrackColor = AppColors.TextDisabled.copy(alpha = 0.4f)
                                 ),
                                 modifier = Modifier.graphicsLayer(scaleX = 0.7f, scaleY = 0.7f)
                             )
@@ -693,41 +887,57 @@ private fun ProxyMiniCard(
                     }
                 }
                 is HubLinkState.Connecting -> {
-                    // 连接中状态
+                    // 连接中状态 - 增强版动画效果
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(24.dp)
+                            .height(26.dp)
                             .background(
-                                color = AppColors.Warning.copy(alpha = 0.8f),
-                                shape = RoundedCornerShape(6.dp)
+                                color = if (isHovered)
+                                    AppColors.Warning.copy(alpha = 0.9f)
+                                else
+                                    AppColors.Warning.copy(alpha = 0.8f),
+                                shape = RoundedCornerShape(7.dp)
+                            )
+                            .shadow(
+                                elevation = if (isHovered) 2.dp else 1.dp,
+                                shape = RoundedCornerShape(7.dp),
+                                spotColor = AppColors.Warning.copy(alpha = 0.2f)
                             ),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             Icons.Default.Sync,
                             null,
-                            Modifier.size(12.dp),
+                            Modifier.size(13.dp),
                             tint = Color.White
                         )
                     }
                 }
                 else -> {
-                    // 连接按钮
+                    // 连接按钮 - 增强版设计
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(24.dp)
+                            .height(26.dp)
                             .background(
-                                color = AppColors.Success,
-                                shape = RoundedCornerShape(6.dp)
+                                color = if (isHovered)
+                                    AppColors.Success.copy(alpha = 0.9f)
+                                else
+                                    AppColors.Success,
+                                shape = RoundedCornerShape(7.dp)
+                            )
+                            .shadow(
+                                elevation = if (isHovered) 3.dp else 1.dp,
+                                shape = RoundedCornerShape(7.dp),
+                                spotColor = AppColors.Success.copy(alpha = 0.3f)
                             ),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             Icons.Default.PlayArrow,
                             null,
-                            Modifier.size(12.dp),
+                            Modifier.size(13.dp),
                             tint = Color.White
                         )
                     }
@@ -788,7 +998,7 @@ private fun HostCardsGrid(
 }
 
 /**
- * 主机小卡片
+ * 主机小卡片 - 增强版macOS风格设计
  */
 @Composable
 private fun HostMiniCard(
@@ -799,281 +1009,218 @@ private fun HostMiniCard(
     onShowDetails: () -> Unit = {},
     onOpenTerminal: () -> Unit = {}
 ) {
-    // 根据连接状态确定视觉风格 - 增强对比度
+    val interactionSource = remember { MutableInteractionSource() }
+    val isHovered by interactionSource.collectIsHoveredAsState()
+
+    // 动画状态
+    val animatedElevation by animateDpAsState(
+        targetValue = if (isHovered) 12.dp else 6.dp,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
+        label = "elevation"
+    )
+
+    val animatedScale by animateFloatAsState(
+        targetValue = if (isHovered) 1.02f else 1.0f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
+        label = "scale"
+    )
+
+    // 根据连接状态确定视觉风格 - 更丰富的渐变和颜色
     val backgroundBrush: Brush
     val borderColor: Color
     val iconTint: Color
     val statusColor: Color
+    val glowColor: Color
 
     if (isConnected) {
         backgroundBrush = Brush.verticalGradient(
             colors = listOf(
-                Color(0xFFF0F8F0), // 浅绿色背景
-                Color(0xFFE8F5E8)
+                Color(0xFFF0F9F0), // 更柔和的绿色渐变
+                Color(0xFFE8F8E8),
+                Color(0xFFE1F5E1)
             )
         )
-        borderColor = AppColors.Success.copy(alpha = 0.4f)
+        borderColor = AppColors.Success.copy(alpha = 0.6f)
         iconTint = AppColors.Success
         statusColor = AppColors.Success
+        glowColor = AppColors.Success.copy(alpha = 0.1f)
     } else {
         backgroundBrush = Brush.verticalGradient(
             colors = listOf(
-                Color(0xFFFAFBFC), // 非常浅的蓝色调背景
-                Color(0xFFF1F3F4)
+                Color(0xFFFCFCFD), // 更精致的默认渐变
+                Color(0xFFF8F9FA),
+                Color(0xFFF4F5F6)
             )
         )
-        borderColor = Color(0xFFE3F2FD) // 浅蓝色边框
+        borderColor = Color(0xFFE8F0FE).copy(alpha = 0.8f)
         iconTint = AppColors.TextSecondary
         statusColor = AppColors.TextDisabled
+        glowColor = AppColors.Primary.copy(alpha = 0.05f)
     }
 
-    // macOS风格的卡片容器 - 增强对比度
+    // 增强版macOS风格的卡片容器
     ContextMenuArea(
         items = {
             listOf(
-                ContextMenuItem("  📋 详情") { onShowDetails() },
-                ContextMenuItem("  🖥️ 终端") { onOpenTerminal() }
+                ContextMenuItem("📋 详情", onClick = onShowDetails),
+                ContextMenuItem("🖥️ 终端", onClick = onOpenTerminal)
             )
         }
     ) {
         Box(
-            modifier = Modifier
+            modifier = Modifier.clickable { if (isConnected) onDisconnect() else onConnect() }
                 .width(140.dp)
                 .height(110.dp)
+                .graphicsLayer {
+                    scaleX = animatedScale
+                    scaleY = animatedScale
+                }
                 .shadow(
-                    elevation = 6.dp,
+                    elevation = animatedElevation,
                     shape = RoundedCornerShape(12.dp),
-                    spotColor = AppColors.Shadow.copy(alpha = 0.15f)
+                    spotColor = if (isHovered) glowColor.copy(alpha = 0.3f) else AppColors.Shadow.copy(alpha = 0.15f)
                 )
                 .clip(RoundedCornerShape(12.dp))
                 .background(backgroundBrush)
                 .border(
-                    width = 1.dp,
-                    color = borderColor,
+                    width = if (isHovered) 1.5.dp else 1.dp,
+                    color = if (isHovered) borderColor.copy(alpha = 0.8f) else borderColor,
                     shape = RoundedCornerShape(12.dp)
                 )
-                .clickable { if (isConnected) onDisconnect() else onConnect() }
         ) {
-        Column(modifier = Modifier.padding(AppDimensions.SpaceS)) {
-            // 顶部：图标和状态指示器
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
-            ) {
-                // 图标容器 - macOS风格的圆形背景
+            Column(modifier = Modifier.padding(AppDimensions.SpaceS)) {
+                // 顶部：图标和状态指示器 - 增强版设计
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Top
+                ) {
+                    // 图标容器 - 增强版macOS风格
+                    Box(
+                        modifier = Modifier
+                            .size(26.dp)
+                            .background(
+                                color = if (isHovered)
+                                    iconTint.copy(alpha = 0.15f)
+                                else
+                                    iconTint.copy(alpha = 0.1f),
+                                shape = RoundedCornerShape(7.dp)
+                            )
+                            .shadow(
+                                elevation = if (isHovered) 2.dp else 1.dp,
+                                shape = RoundedCornerShape(7.dp),
+                                spotColor = iconTint.copy(alpha = 0.2f)
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Computer,
+                            contentDescription = null,
+                            tint = iconTint,
+                            modifier = Modifier.size(15.dp)
+                        )
+                    }
+
+                    // 状态指示点 - 增强版光晕效果
+                    Box(
+                        modifier = Modifier
+                            .size(12.dp)
+                            .background(
+                                color = statusColor.copy(alpha = if (isHovered) 0.3f else 0.2f),
+                                shape = RoundedCornerShape(50)
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(if (isHovered) 7.dp else 6.dp)
+                                .background(
+                                    color = statusColor,
+                                    shape = RoundedCornerShape(50)
+                                )
+                                .shadow(
+                                    elevation = 1.dp,
+                                    shape = RoundedCornerShape(50),
+                                    spotColor = statusColor.copy(alpha = 0.5f)
+                                )
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(AppDimensions.SpaceXS))
+
+                // 中间：名称和地址分开显示 - 优化布局
+                Box(
+                    modifier = Modifier.weight(1f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.Start,
+                        verticalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        // 主机名称 - 增强版样式
+                        Text(
+                            text = config.name,
+                            style = AppTypography.BodySmall.copy(
+                                fontWeight = FontWeight.SemiBold,
+                                letterSpacing = 0.1.sp
+                            ),
+                            color = if (isHovered)
+                                AppColors.TextPrimary.copy(alpha = 0.9f)
+                            else
+                                AppColors.TextPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        // 主机地址 - 更精细的样式
+                        Text(
+                            text = "${config.host}:${config.port}",
+                            style = AppTypography.Caption.copy(
+                                fontWeight = FontWeight.Normal,
+                                letterSpacing = 0.05.sp
+                            ),
+                            color = if (isHovered)
+                                AppColors.TextSecondary.copy(alpha = 0.8f)
+                            else
+                                AppColors.TextSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+
+                // 底部：操作按钮 - 增强版macOS风格
                 Box(
                     modifier = Modifier
-                        .size(24.dp)
+                        .fillMaxWidth()
+                        .height(26.dp)
                         .background(
-                            color = iconTint.copy(alpha = 0.1f),
-                            shape = RoundedCornerShape(6.dp)
+                            color = if (isHovered)
+                                (if (isConnected) AppColors.Error else AppColors.Success).copy(alpha = 0.9f)
+                            else
+                                if (isConnected) AppColors.Error else AppColors.Success,
+                            shape = RoundedCornerShape(7.dp)
+                        )
+                        .shadow(
+                            elevation = if (isHovered) 3.dp else 1.dp,
+                            shape = RoundedCornerShape(7.dp),
+                            spotColor = (if (isConnected) AppColors.Error else AppColors.Success).copy(alpha = 0.3f)
                         ),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Computer,
-                        contentDescription = null,
-                        tint = iconTint,
-                        modifier = Modifier.size(14.dp)
+                        if (isConnected) Icons.Default.Stop else Icons.Default.PlayArrow,
+                        null,
+                        Modifier.size(13.dp),
+                        tint = Color.White
                     )
-                }
-
-                // 状态指示点 - macOS风格的光晕效果
-                Box(
-                    modifier = Modifier
-                        .size(10.dp)
-                        .background(
-                            color = statusColor.copy(alpha = 0.2f),
-                            shape = RoundedCornerShape(50)
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(6.dp)
-                            .background(
-                                color = statusColor,
-                                shape = RoundedCornerShape(50)
-                            )
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(AppDimensions.SpaceXS))
-
-            // 中间：名称和地址分开显示 - 两行布局
-            Box(
-                modifier = Modifier.weight(1f),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.Start,
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
-                    // 主机名称
-                    Text(
-                        text = config.name,
-                        style = AppTypography.BodySmall.copy(fontWeight = FontWeight.Medium),
-                        color = AppColors.TextPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    // 主机地址
-                    Text(
-                        text = "${config.host}:${config.port}",
-                        style = AppTypography.Caption,
-                        color = AppColors.TextSecondary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            }
-
-            // 底部：操作按钮 - macOS风格的紧凑布局
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(24.dp)
-                    .background(
-                        color = if (isConnected) AppColors.Error else AppColors.Success,
-                        shape = RoundedCornerShape(6.dp)
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    if (isConnected) Icons.Default.Stop else Icons.Default.PlayArrow,
-                    null,
-                    Modifier.size(12.dp),
-                    tint = Color.White
-                )
-            }
-        }
-    }
-    }
-}
-
-/**
- * 配置项数据类
- */
-data class ConfigItem(
-    val id: String,
-    val name: String,
-    val subtitle: String,
-    val isSelected: Boolean
-)
-
-/**
- * 首页配置对话框
- */
-
-/**
- * 首页配置对话框 - 简化版本
- */
-@Composable
-private fun IndexConfigDialog(
-    title: String,
-    items: List<ConfigItem>,
-    onDismiss: () -> Unit,
-    onConfirm: (Set<String>) -> Unit
-) {
-    var selectedIds by remember { mutableStateOf(items.filter { it.isSelected }.map { it.id }.toSet()) }
-
-    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(max = 500.dp),
-            shape = RoundedCornerShape(12.dp)
-        ) {
-            Column(modifier = Modifier.padding(AppDimensions.PaddingL)) {
-                // 标题
-                Text(
-                    text = title,
-                    style = AppTypography.TitleLarge,
-                    color = AppColors.TextPrimary,
-                    modifier = Modifier.padding(bottom = AppDimensions.SpaceL)
-                )
-
-                // 配置项列表
-                if (items.isEmpty()) {
-                    Text("无配置项", style = AppTypography.BodyMedium, color = AppColors.TextSecondary)
-                } else {
-                    Column(modifier = Modifier.weight(1f)) {
-                        // 只显示前几个项目，避免界面太长
-                        items.take(10).forEach { item ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        selectedIds = if (selectedIds.contains(item.id)) {
-                                            selectedIds - item.id
-                                        } else {
-                                            selectedIds + item.id
-                                        }
-                                    }
-                                    .padding(vertical = AppDimensions.SpaceS),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Checkbox(
-                                    checked = selectedIds.contains(item.id),
-                                    onCheckedChange = null // 由点击处理
-                                )
-
-                                Spacer(modifier = Modifier.width(AppDimensions.SpaceM))
-
-                                Column(modifier = Modifier.weight(1f)) {
-        Text(
-                                        text = item.name,
-            style = AppTypography.BodyMedium,
-                                        color = AppColors.TextPrimary
-                                    )
-                                    Text(
-                                        text = item.subtitle,
-                                        style = AppTypography.Caption,
-            color = AppColors.TextSecondary
-        )
-                                }
-                            }
-                        }
-                        if (items.size > 10) {
-                            Text(
-                                text = "还有 ${items.size - 10} 个项目...",
-                                style = AppTypography.Caption,
-                                color = AppColors.TextSecondary,
-                                modifier = Modifier.padding(vertical = AppDimensions.SpaceS)
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(AppDimensions.SpaceL))
-
-                // 操作按钮
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    TextButton(onClick = onDismiss) {
-                        Text("取消", color = AppColors.TextSecondary)
-                    }
-
-                    Spacer(modifier = Modifier.width(AppDimensions.SpaceM))
-
-                    Button(
-                        onClick = { onConfirm(selectedIds) },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = AppColors.Primary,
-                            contentColor = Color.White
-                        )
-                    ) {
-                        Text("确定")
-                    }
                 }
             }
         }
+
     }
 }
+
+
